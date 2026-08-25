@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "WDK Doctor",
+    "slug": "wdk-doctor",
+    "version": "1.0.0",
+    "newArchEnabled": true,
+    "orientation": "portrait",
+    "scheme": "wdk-doctor",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "io.tether.wdkdoctor",
+      "entitlements": {
+        "com.apple.developer.icloud-services": [
+          "CloudKit"
+        ],
+        "com.apple.developer.icloud-container-identifiers": [
+          "iCloud.io.tether.wdkshowcase"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "io.tether.wdkdoctor"
+    },
+    "plugins": [
+      [
+        "expo-router"
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ],
+      "./modules/cloud-backup/withModularHeaders.js"
+    ]
+  }
+}
