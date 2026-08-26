@@ -63,6 +63,7 @@
     "babel-preset-expo": "~55.0.8",
     "prettier": "^3.3.3",
     "prettier-config-standard": "^7.0.0",
+    "react-refresh": "^0.18.0",
     "typescript": "^5.3.3"
   }
 }
