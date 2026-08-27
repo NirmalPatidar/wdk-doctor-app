@@ -13,7 +13,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { Toaster } from 'sonner-native';
 import { colors } from '../constants/colors';
-import wdkConfigs from '../config/chain';
+import wdkConfigs from '../config/doctorRuntime';
 // import the generated bundle
 import bundle from '../../.wdk-bundle/wdk-worklet.bundle.js';
 import { CloudBackupProvider } from '@/context/CloudBackupContext';

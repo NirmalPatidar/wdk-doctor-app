@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, ActivityIndicator,
 import { colors } from '@/constants/colors';
 import { ConsoleOutput } from './ConsoleOutput';
 import { ChainSelector } from './ChainSelector';
-import wdkConfigs from '@/config/chain';
+import wdkConfigs from '@/config/doctorRuntime';
 
 export interface ActionField {
   id: string;

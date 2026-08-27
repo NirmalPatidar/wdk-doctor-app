@@ -1,7 +1,5 @@
 import { AppAsset } from '@/entities/AppAsset';
 import type { AppAssetConfig } from '@/entities/AppAsset';
-import { NETWORK_NAME } from './chain';
-
 /**
  * Main Application Asset Configurations
  * This list is used to instantiate AppAsset objects that are used throughout the app.
@@ -9,7 +7,7 @@ import { NETWORK_NAME } from './chain';
 export const tokenAssetConfigs: AppAssetConfig[] = [
   {
     id: 'ethereum-native',
-    network: NETWORK_NAME.ETHEREUM,
+    network: 'ethereum',
     isNative: true,
     address: null,
     symbol: 'ETH',
@@ -19,9 +17,12 @@ export const tokenAssetConfigs: AppAssetConfig[] = [
   },
   {
     id: 'ethereum-usdt',
-    network: NETWORK_NAME.ETHEREUM,
+    network: 'ethereum',
     isNative: false,
-    address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    // Sepolia test USDT — same contract already used as paymasterToken in
+    // doctor.runtime.example.json. The original mainnet address
+    // (0xdAC17F958D2ee523a2206206994597C13D831ec7) does not exist on Sepolia.
+    address: '0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0',
     symbol: 'USDT',
     name: 'Tether USD',
     decimals: 6,
@@ -29,8 +30,11 @@ export const tokenAssetConfigs: AppAssetConfig[] = [
   },
   {
     id: 'ethereum-xaut',
-    network: NETWORK_NAME.ETHEREUM,
+    network: 'ethereum',
     isNative: false,
+    // UNVERIFIED for Sepolia — this is still the mainnet address. No Sepolia
+    // equivalent has been confirmed. Don't rely on this entry for testing
+    // until a real Sepolia address is found, or remove it for now.
     address: '0x68749665FF8D2d112Fa859AA293F07A622782F38',
     symbol: 'XAUT',
     name: 'Tether Gold',
@@ -39,8 +43,9 @@ export const tokenAssetConfigs: AppAssetConfig[] = [
   },
   {
     id: 'ethereum-usat',
-    network: NETWORK_NAME.ETHEREUM,
+    network: 'ethereum',
     isNative: false,
+    // UNVERIFIED for Sepolia — same caveat as XAUT above.
     address: '0x07041776f5007aca2a54844f50503a18a72a8b68',
     symbol: 'USAT',
     name: 'Tether USAT',
@@ -48,7 +53,7 @@ export const tokenAssetConfigs: AppAssetConfig[] = [
   },
   {
     id: 'bitcoin-native',
-    network: NETWORK_NAME.BITCOIN,
+    network: 'bitcoin',
     isNative: true,
     symbol: 'BTC',
     name: 'Bitcoin',
@@ -56,7 +61,7 @@ export const tokenAssetConfigs: AppAssetConfig[] = [
   },
   {
     id: 'bitcoin-spark',
-    network: NETWORK_NAME.SPARK,
+    network: 'spark',
     isNative: true,
     symbol: 'BTC',
     name: 'Bitcoin',
@@ -64,8 +69,9 @@ export const tokenAssetConfigs: AppAssetConfig[] = [
   },
   {
     id: 'tron-usdt',
-    network: NETWORK_NAME.TRON,
+    network: 'tron',
     isNative: false,
+    // UNVERIFIED for Nile testnet — hasn't been independently confirmed here.
     address: 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
     symbol: 'USDT',
     name: 'Tether USD',

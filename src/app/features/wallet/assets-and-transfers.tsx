@@ -10,7 +10,6 @@ import { AssetSelector } from '@/components/AssetSelector';
 import BigNumber from 'bignumber.js';
 import type { WalletAccountTronGasfree } from '@tetherto/wdk-wallet-tron-gasfree';
 import type { WalletAccountEvmErc4337 } from '@tetherto/wdk-wallet-evm-erc-4337';
-import { NETWORK_NAME } from '@/config/chain';
 
 export default function AssetsAndTransfersScreen() {
   const accountIndex = 0;
@@ -90,7 +89,7 @@ export default function AssetsAndTransfersScreen() {
       if (!token) return null;
 
       switch (network) {
-        case NETWORK_NAME.ETHEREUM:
+        case 'ethereum':
           return (account.extension() as WalletAccountEvmErc4337).transfer({
             recipient,
             amount: amountInBaseUnit,
@@ -100,7 +99,7 @@ export default function AssetsAndTransfersScreen() {
               address: token
             }
           });
-        case NETWORK_NAME.TRON:
+        case 'tron':
           return (account.extension() as WalletAccountTronGasfree).transfer({
             recipient,
             amount: BigInt(amountInBaseUnit),

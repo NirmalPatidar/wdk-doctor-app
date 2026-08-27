@@ -3,7 +3,7 @@
   "main": "expo-router/entry",
   "description": "Showcase application for WDK (Wallet Development Kit) features in React Native",
   "scripts": {
-    "postinstall": "wdk-worklet-bundler generate",
+    "postinstall": "node scripts/ensure-doctor-runtime-config.js && wdk-worklet-bundler generate",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios"

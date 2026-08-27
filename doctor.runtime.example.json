@@ -1,0 +1,67 @@
+{
+  "_readme": [
+    "Spark is intentionally on MAINNET, not testnet. Spark's testnet auth service",
+    "(spark_authn.SparkAuthnService/get_challenge) was confirmed unreachable during",
+    "testing on 2026-08-27 — 'UNAVAILABLE: connection refused' — while the exact same",
+    "wdk-wallet-spark config against MAINNET worked correctly. Bitcoin, Ethereum, and",
+    "Tron below are all real testnets; Spark is the one exception.",
+    "THIS MEANS SPARK TRANSACTIONS IN THIS APP USE REAL VALUE. Do not fund the Spark",
+    "account casually, and do not treat this network the same as the other three.",
+    "Follow-up: check with the team whether Spark's testnet is expected to come back,",
+    "or whether REGTEST is the intended path for local dogfooding — every example in",
+    "Spark's own upstream SDK docs (docs.spark.money) uses MAINNET or REGTEST, never",
+    "TESTNET, which may mean testnet just isn't well-monitored on their side.",
+    "This field is never read by src/config/doctorRuntime.ts (which only looks at",
+    "networks/protocols/modules) — it exists purely for anyone opening this file."
+  ],
+  "networks": {
+    "bitcoin": {
+      "blockchain": "bitcoin",
+      "config": {
+        "network": "testnet",
+        "client": {
+          "type": "blockbook-http",
+          "clientConfig": {
+            "url": "$EXPO_PUBLIC_BTC_PROVIDER"
+          }
+        }
+      }
+    },
+    "ethereum": {
+      "blockchain": "ethereum",
+      "config": {
+        "chainId": 11155111,
+        "provider": "$EXPO_PUBLIC_EVM_PROVIDER",
+        "bundlerUrl": "$EXPO_PUBLIC_EVM_BUNDLER_URL",
+        "paymasterUrl": "$EXPO_PUBLIC_EVM_PAYMASTER_URL",
+        "paymasterAddress": "0x8b1f6cb5d062aa2ce8d581942bbb960420d875ba",
+        "safeModulesVersion": "0.3.0",
+        "paymasterToken": {
+          "address": "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0"
+        },
+        "transferMaxFee": 10000000
+      }
+    },
+    "spark": {
+      "blockchain": "spark",
+      "config": {
+        "network": "MAINNET"
+      }
+    },
+    "tron": {
+      "blockchain": "tron",
+      "config": {
+        "chainId": 3448148188,
+        "provider": "$EXPO_PUBLIC_TRON_PROVIDER",
+        "gasFreeProvider": "$EXPO_PUBLIC_TRON_GASFREE_PROVIDER",
+        "gasFreeApiKey": "$EXPO_PUBLIC_TRON_GASFREE_API_KEY",
+        "gasFreeApiSecret": "$EXPO_PUBLIC_TRON_GASFREE_API_SECRET",
+        "serviceProvider": "TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E",
+        "verifyingContract": "THQGuFzL87ZqhxkgqYEryRAd7gqFqL5rdc",
+        "transferMaxFee": 100000000000000
+      }
+    }
+  },
+  "protocols": {},
+  "modules": {}
+}

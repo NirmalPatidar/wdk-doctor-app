@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, View, Text, Modal, TouchableOpacity, FlatList } from 'react-native';
 import { ChevronDown, X, Check } from 'lucide-react-native';
 import { colors } from '@/constants/colors';
-import wdkConfigs from '@/config/chain';
+import wdkConfigs from '@/config/doctorRuntime';
 
 interface Props {
   selectedChain: string;

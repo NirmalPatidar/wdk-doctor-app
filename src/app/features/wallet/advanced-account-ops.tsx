@@ -6,11 +6,10 @@ import { ActionCard } from '@/components/ActionCard';
 import { FeatureLayout } from '@/components/FeatureLayout';
 import { ConsoleOutput } from '@/components/ConsoleOutput';
 import { colors } from '@/constants/colors';
-import { NETWORK_NAME } from '@/config/chain';
 
 export default function AdvancedAccountOpsScreen() {
   const account = useAccount<WalletAccountSpark>({
-    network: NETWORK_NAME.SPARK,
+    network: 'spark',
     accountIndex: 0
   });
   const extension = account.extension()
@@ -23,7 +22,7 @@ export default function AdvancedAccountOpsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account Details</Text>
         <Text style={styles.sectionSubtitle}>
-          Derived from network "{NETWORK_NAME.SPARK}" at index {0}
+          Derived from network "spark" at index {0}
         </Text>
         <ConsoleOutput data={{
           address: account.address,
