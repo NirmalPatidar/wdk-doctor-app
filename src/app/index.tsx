@@ -150,7 +150,6 @@ export default function App() {
             <FeatureItem title="Manage Addresses" route="/features/wallet/addresses" />
             <FeatureItem title="Assets & Transfers" route="/features/wallet/assets-and-transfers" />
             <FeatureItem title="Advanced Account Ops" route="/features/wallet/advanced-account-ops" />
-            <FeatureItem title="Cloud Backup" route="/features/cloud/cloud-backup" />
           </FeatureGroup>
         </View>
       </ScrollView>

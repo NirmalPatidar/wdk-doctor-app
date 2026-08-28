@@ -1,6 +1,3 @@
-// Polyfill crypto.getRandomValues for the RN JS thread. Must be the FIRST
-// import — @noble/ciphers (via @tetherto/wdk-utils) needs it at module load.
-import 'react-native-get-random-values';
 import { DarkTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
 import { WdkAppProvider, useWdkApp } from '@tetherto/wdk-react-native-core';
 import { ThemeProvider } from '@tetherto/wdk-uikit-react-native';
@@ -16,7 +13,6 @@ import { colors } from '../constants/colors';
 import wdkConfigs from '../config/doctorRuntime';
 // import the generated bundle
 import bundle from '../../.wdk-bundle/wdk-worklet.bundle.js';
-import { CloudBackupProvider } from '@/context/CloudBackupContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -47,43 +43,40 @@ export default function RootLayout() {
       wdkConfigs={wdkConfigs}
       bundle={{ bundle: bundle as string }}
     >
-      <CloudBackupProvider>
-
-        <SplashHandler>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <ThemeProvider
-              defaultMode="dark"
-              brandConfig={{
-                primaryColor: colors.primary,
+      <SplashHandler>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <ThemeProvider
+            defaultMode="dark"
+            brandConfig={{
+              primaryColor: colors.primary,
+            }}
+          >
+            <NavigationThemeProvider value={CustomDarkTheme}>
+              <View style={{ flex: 1, backgroundColor: colors.background }}>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: colors.background },
+                  }}
+                />
+                <StatusBar style="light" />
+              </View>
+            </NavigationThemeProvider>
+            <Toaster
+              offset={90}
+              toastOptions={{
+                style: {
+                  backgroundColor: colors.background,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                },
+                titleStyle: { color: colors.text },
+                descriptionStyle: { color: colors.text },
               }}
-            >
-              <NavigationThemeProvider value={CustomDarkTheme}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                  <Stack
-                    screenOptions={{
-                      headerShown: false,
-                      contentStyle: { backgroundColor: colors.background },
-                    }}
-                  />
-                  <StatusBar style="light" />
-                </View>
-              </NavigationThemeProvider>
-              <Toaster
-                offset={90}
-                toastOptions={{
-                  style: {
-                    backgroundColor: colors.background,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  },
-                  titleStyle: { color: colors.text },
-                  descriptionStyle: { color: colors.text },
-                }}
-              />
-            </ThemeProvider>
-          </GestureHandlerRootView>
-        </SplashHandler>
-      </CloudBackupProvider>
+            />
+          </ThemeProvider>
+        </GestureHandlerRootView>
+      </SplashHandler>
     </WdkAppProvider>
   );
 }

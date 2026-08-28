@@ -15,15 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.tether.wdkdoctor",
-      "entitlements": {
-        "com.apple.developer.icloud-services": [
-          "CloudKit"
-        ],
-        "com.apple.developer.icloud-container-identifiers": [
-          "iCloud.io.tether.wdkshowcase"
-        ]
-      }
+      "bundleIdentifier": "io.tether.wdkdoctor"
     },
     "android": {
       "adaptiveIcon": {
@@ -43,8 +35,7 @@
             "minSdkVersion": 29
           }
         }
-      ],
-      "./modules/cloud-backup/withModularHeaders.js"
+      ]
     ]
   }
 }
