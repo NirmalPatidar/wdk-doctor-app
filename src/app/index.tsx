@@ -3,7 +3,7 @@ import { useWdkApp, useWalletManager } from '@tetherto/wdk-react-native-core'
 import { colors } from '@/constants/colors';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Wallet, ChevronRight, CheckCircle2, XCircle, Settings, Plus } from 'lucide-react-native';
+import { Wallet, ChevronRight, CheckCircle2, XCircle, Settings, Plus, Stethoscope } from 'lucide-react-native';
 
 const FeatureGroup = ({ title, icon, children }: { title: string, icon: React.ReactNode, children: React.ReactNode }) => (
   <View style={styles.groupContainer}>
@@ -144,9 +144,11 @@ export default function App() {
 
         <View style={styles.groupsContainer}>
           <FeatureGroup 
-            title="Features" 
-            icon={<Wallet size={20} color={colors.primary} />}
+            title="Doctor's Tools" 
+            icon={<Stethoscope size={20} color={colors.primary} />}
           >
+            <FeatureItem title="Account / Module / Protocol Explorer" route="/features/doctor/account-module-explorer" />
+            <FeatureItem title="Worklet POC (no rn-core)" route="/features/doctor/worklet-poc" />
             <FeatureItem title="Manage Addresses" route="/features/wallet/addresses" />
             <FeatureItem title="Assets & Transfers" route="/features/wallet/assets-and-transfers" />
             <FeatureItem title="Advanced Account Ops" route="/features/wallet/advanced-account-ops" />

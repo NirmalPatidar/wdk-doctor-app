@@ -12,7 +12,22 @@
     "Spark's own upstream SDK docs (docs.spark.money) uses MAINNET or REGTEST, never",
     "TESTNET, which may mean testnet just isn't well-monitored on their side.",
     "This field is never read by src/config/doctorRuntime.ts (which only looks at",
-    "networks/protocols/modules) — it exists purely for anyone opening this file."
+    "networks/protocols/modules) — it exists purely for anyone opening this file.",
+    "",
+    "modules.addressBook: first real test of the module half of the worklet",
+    "(@tetherto/wdk-p2p-address-book, per manager request). 'namespace' and the",
+    "factory/events in wdk.config.js are confirmed directly from the package's own",
+    "source. 'storagePath' below is CONFIRMED BROKEN — real device test threw",
+    "ENOENT: no such file or directory, stat \"addressbook-storage\". A plain",
+    "relative string doesn't resolve inside the Bare sandbox, and Bare's fs does",
+    "not auto-create missing directories. The real fix (see worklet-poc.tsx's",
+    "buildConfigWithRealStoragePath) computes an absolute, created-if-missing",
+    "path via expo-file-system's Paths.document at runtime, then overrides this",
+    "static value before sending config — mirrors bare-mobile-doctor's",
+    "useBareDirectory hook, the one confirmed-working precedent for this. This",
+    "static value is left as a clearly-nonfunctional placeholder rather than",
+    "quietly fixed, so anyone reading only this file (not the POC) isn't misled",
+    "into thinking a relative string works."
   ],
   "networks": {
     "bitcoin": {
@@ -63,5 +78,10 @@
     }
   },
   "protocols": {},
-  "modules": {}
+  "modules": {
+    "addressBook": {
+      "storagePath": "./addressbook-storage",
+      "namespace": "wdk-doctor-app"
+    }
+  }
 }
