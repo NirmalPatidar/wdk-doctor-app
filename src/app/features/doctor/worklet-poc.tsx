@@ -39,7 +39,7 @@
  * latency isn't mistaken for genuine blocking.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Worklet } from 'react-native-bare-kit';
 import { HRPC } from '@tetherto/pear-wrk-wdk';
@@ -49,7 +49,8 @@ import { Directory, Paths } from 'expo-file-system';
 import bundle from '../../../../.wdk-bundle/wdk-worklet.bundle.js';
 import { FeatureLayout } from '@/components/FeatureLayout';
 import { ConsoleOutput } from '@/components/ConsoleOutput';
-import { colors } from '@/constants/colors';
+import { useTheme } from '@/providers/ThemeProvider';
+import type { ColorPalette } from '@/constants/colors';
 import wdkConfigs from '@/config/doctorRuntime';
 
 // react-native-bare-kit's shipped type declarations don't include `started`
@@ -127,6 +128,8 @@ function buildConfigWithRealStoragePath(): typeof wdkConfigs {
 export default function WorkletPocScreen() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [running, setRunning] = useState(false);
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const addLog = (step: string, data: unknown) => {
     setLog((prev) => [...prev, { step, data }]);
@@ -330,27 +333,30 @@ export default function WorkletPocScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  button: {
-    backgroundColor: colors.primary,
-    height: 50,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  buttonText: {
-    color: colors.black,
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  stepTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 8,
-  },
-});
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    button: {
+      backgroundColor: colors.primary,
+      height: 50,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 24,
+    },
+    // Primary (orange-background) button — onPrimary, not colors.black.
+    buttonText: {
+      color: colors.onPrimary,
+      fontWeight: 'bold',
+      fontSize: 16,
+    },
+    section: {
+      marginBottom: 20,
+    },
+    stepTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+    },
+  });
+}

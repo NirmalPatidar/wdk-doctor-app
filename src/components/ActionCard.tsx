@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { colors } from '@/constants/colors';
+import { useTheme } from '@/providers/ThemeProvider';
+import type { ColorPalette } from '@/constants/colors';
 import { ConsoleOutput } from './ConsoleOutput';
 import { ChainSelector } from './ChainSelector';
 import wdkConfigs from '@/config/doctorRuntime';
@@ -29,6 +30,9 @@ export const ActionCard: React.FC<Props> = ({
   action, 
   actionLabel = 'Run' 
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   // Initialize state with default values
   const [formValues, setFormValues] = useState<Record<string, any>>(() => {
     const initial: Record<string, any> = {};
@@ -141,7 +145,7 @@ export const ActionCard: React.FC<Props> = ({
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color={colors.black} />
+          <ActivityIndicator color={colors.onPrimary} />
         ) : (
           <Text style={styles.buttonText}>{actionLabel}</Text>
         )}
@@ -154,92 +158,98 @@ export const ActionCard: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 20,
-    marginBottom: 20,
-  },
-  header: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  description: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  form: {
-    marginBottom: 20,
-  },
-  fieldContainer: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-    fontWeight: '500',
-    textTransform: 'capitalize',
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 16,
-    color: colors.text,
-    fontSize: 16,
-    minHeight: 54,
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  button: {
-    backgroundColor: colors.primary,
-    height: 50,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: colors.black,
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  selectScrollView: {
-    flexDirection: 'row',
-  },
-  selectButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: 10,
-    height: 42,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  selectButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  selectButtonText: {
-    color: colors.text,
-    fontWeight: '500',
-  },
-  selectButtonTextSelected: {
-    color: colors.black,
-  },
-});
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 20,
+      marginBottom: 20,
+    },
+    header: {
+      marginBottom: 20,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    description: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+    },
+    form: {
+      marginBottom: 20,
+    },
+    fieldContainer: {
+      marginBottom: 16,
+    },
+    label: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: 8,
+      fontWeight: '500',
+      textTransform: 'capitalize',
+    },
+    input: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: 16,
+      color: colors.text,
+      fontSize: 16,
+      minHeight: 54,
+    },
+    textArea: {
+      height: 100,
+      textAlignVertical: 'top',
+    },
+    // Primary (orange-background) button — text/icon uses onPrimary, which
+    // flips white/black per theme by design, not colors.text.
+    button: {
+      backgroundColor: colors.primary,
+      height: 50,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonText: {
+      color: colors.onPrimary,
+      fontWeight: 'bold',
+      fontSize: 16,
+    },
+    selectScrollView: {
+      flexDirection: 'row',
+    },
+    // Unselected pill — neutral background, so its text follows the "no
+    // primary background -> orange text" half of the same rule.
+    selectButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginRight: 10,
+      height: 42,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    selectButtonSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    selectButtonText: {
+      color: colors.primary,
+      fontWeight: '500',
+    },
+    selectButtonTextSelected: {
+      color: colors.onPrimary,
+    },
+  });
+}

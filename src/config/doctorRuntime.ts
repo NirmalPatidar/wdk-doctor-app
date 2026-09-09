@@ -1,4 +1,3 @@
-import type { WdkConfigs } from '@tetherto/wdk-react-native-core'
 // This static import requires doctor.runtime.json to exist on disk at bundle
 // time — Metro resolves it once, like any other module. It's gitignored
 // (personal, per-contributor), so `npm install` (via postinstall) copies it
@@ -11,6 +10,15 @@ interface DoctorRuntimeConfig {
   protocols?: Record<string, unknown>
   modules?: Record<string, unknown>
 }
+
+// Previously typed as WdkConfigs, imported from @tetherto/wdk-react-native-core
+// purely for this type annotation — no runtime dependency, but a real one
+// nonetheless (the package still had to be installed for this to compile).
+// Since wdkConfigs only ever gets JSON.stringify'd and sent over the wire to
+// workletStart/initializeWDK, it never needed to structurally match an
+// external type at all. WdkRuntimeConfig below is exactly the shape actually
+// produced — no dependency on rn-core even at the type level now.
+export type WdkRuntimeConfig = Required<DoctorRuntimeConfig>
 
 /**
  * Recursively replaces any string value that's exactly "$VARNAME" with
@@ -47,14 +55,13 @@ function interpolateEnv(value: unknown, path: string[] = []): unknown {
 
 const config = rawRuntimeConfig as DoctorRuntimeConfig
 
-// WdkConfigs defaults its TNetwork/TProtocol generics to a permissive shape
-// when no type args are given — appropriate here, since doctor.runtime.json
-// is deliberately untyped so that adding a new package never requires a
-// TypeScript change, only a JSON entry.
-export const wdkConfigs: WdkConfigs = interpolateEnv({
+// Deliberately permissive (Record<string, unknown> per section) so that
+// adding a new package to doctor.runtime.json never requires a TypeScript
+// change, only a JSON entry.
+export const wdkConfigs: WdkRuntimeConfig = interpolateEnv({
   networks: config.networks ?? {},
   protocols: config.protocols ?? {},
   modules: config.modules ?? {}
-}) as WdkConfigs
+}) as WdkRuntimeConfig
 
 export default wdkConfigs

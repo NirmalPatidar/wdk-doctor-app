@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, Text, Modal, TouchableOpacity, FlatList } from 'react-native';
 import { ChevronDown, X, Check } from 'lucide-react-native';
-import { colors } from '@/constants/colors';
+import { useTheme } from '@/providers/ThemeProvider';
+import type { ColorPalette } from '@/constants/colors';
 import wdkConfigs from '@/config/doctorRuntime';
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
 }
 
 export const ChainSelector: React.FC<Props> = ({ selectedChain, onSelectChain, label = "Network" }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [modalVisible, setModalVisible] = useState(false);
   const chains = Object.keys(wdkConfigs.networks);
 
@@ -69,77 +72,79 @@ export const ChainSelector: React.FC<Props> = ({ selectedChain, onSelectChain, l
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  selector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 16,
-  },
-  selectedValue: {
-    fontSize: 16,
-    color: colors.text,
-    fontWeight: '500',
-    textTransform: 'capitalize',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '70%',
-    paddingBottom: 40,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  selectedOption: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  optionText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textTransform: 'capitalize',
-  },
-  selectedOptionText: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: ColorPalette) {
+  return StyleSheet.create({
+    container: {
+      marginBottom: 16,
+    },
+    label: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: 8,
+      fontWeight: '500',
+    },
+    selector: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: 16,
+    },
+    selectedValue: {
+      fontSize: 16,
+      color: colors.text,
+      fontWeight: '500',
+      textTransform: 'capitalize',
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-end',
+    },
+    modalContent: {
+      backgroundColor: colors.background,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      maxHeight: '70%',
+      paddingBottom: 40,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: colors.text,
+    },
+    option: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    selectedOption: {
+      backgroundColor: colors.card,
+    },
+    optionText: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textTransform: 'capitalize',
+    },
+    selectedOptionText: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+  });
+}

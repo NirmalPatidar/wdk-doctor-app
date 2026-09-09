@@ -1,6 +1,5 @@
-import { DarkTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
-import { WdkAppProvider, useWdkApp } from '@tetherto/wdk-react-native-core';
-import { ThemeProvider } from '@tetherto/wdk-uikit-react-native';
+import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
+import { ThemeProvider as UikitThemeProvider } from '@tetherto/wdk-uikit-react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -9,74 +8,94 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { Toaster } from 'sonner-native';
-import { colors } from '../constants/colors';
-import wdkConfigs from '../config/doctorRuntime';
-// import the generated bundle
-import bundle from '../../.wdk-bundle/wdk-worklet.bundle.js';
+import { DoctorWorkletProvider, useDoctorWorklet } from '../providers/DoctorWorkletProvider';
+import { ThemeProvider as DoctorThemeProvider, useTheme } from '../providers/ThemeProvider';
 
 SplashScreen.preventAutoHideAsync();
 
-const CustomDarkTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: colors.background,
-    card: colors.background,
-  },
-};
-
 const SplashHandler = ({ children }: { children: React.ReactNode }) => {
-  const { state } = useWdkApp();
+  const { workletStatus } = useDoctorWorklet();
 
   useEffect(() => {
-    if (state.status === 'INITIALIZING') {
-      SplashScreen.hideAsync();
-    }
-  }, [state.status]);
+    // Old behavior hid the splash screen as soon as WdkAppProvider's status
+    // first became 'INITIALIZING' — effectively immediately, since that was
+    // its starting state. workletStatus starts at 'initializing' the same
+    // way, so hiding on mount here is the faithful equivalent: the app's own
+    // UI (the Worklet Ready / Wallet Ready badges) takes over from here,
+    // same as before.
+    SplashScreen.hideAsync();
+  }, [workletStatus]);
 
   return <>{children}</>;
 };
 
+const ThemedApp = () => {
+  const { theme, colors } = useTheme();
+
+  const navigationTheme = {
+    ...(theme === 'dark' ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(theme === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+      background: colors.background,
+      card: colors.background,
+      border: colors.border,
+      text: colors.text,
+      primary: colors.primary,
+    },
+  };
+
+  return (
+    // NOTE — untested assumption: wdk-uikit-react-native's ThemeProvider
+    // takes this prop as `defaultMode`, not `mode`. The name suggests it may
+    // only be read once at mount rather than reacting to changes on every
+    // render, since we don't have that package's source to confirm either
+    // way. If toggling the theme changes this app's own screens but the
+    // UIKit's own components (whichever ones use its internal styling) stay
+    // stuck on whatever mode was active at launch, this is the first place
+    // to look.
+    <UikitThemeProvider
+      defaultMode={theme}
+      brandConfig={{
+        primaryColor: colors.primary,
+      }}
+    >
+      <NavigationThemeProvider value={navigationTheme}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          />
+          <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+        </View>
+      </NavigationThemeProvider>
+      <Toaster
+        offset={90}
+        toastOptions={{
+          style: {
+            backgroundColor: colors.background,
+            borderWidth: 1,
+            borderColor: colors.border,
+          },
+          titleStyle: { color: colors.text },
+          descriptionStyle: { color: colors.text },
+        }}
+      />
+    </UikitThemeProvider>
+  );
+};
+
 export default function RootLayout() {
   return (
-    <WdkAppProvider
-      wdkConfigs={wdkConfigs}
-      bundle={{ bundle: bundle as string }}
-    >
-      <SplashHandler>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <ThemeProvider
-            defaultMode="dark"
-            brandConfig={{
-              primaryColor: colors.primary,
-            }}
-          >
-            <NavigationThemeProvider value={CustomDarkTheme}>
-              <View style={{ flex: 1, backgroundColor: colors.background }}>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: colors.background },
-                  }}
-                />
-                <StatusBar style="light" />
-              </View>
-            </NavigationThemeProvider>
-            <Toaster
-              offset={90}
-              toastOptions={{
-                style: {
-                  backgroundColor: colors.background,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                },
-                titleStyle: { color: colors.text },
-                descriptionStyle: { color: colors.text },
-              }}
-            />
-          </ThemeProvider>
-        </GestureHandlerRootView>
-      </SplashHandler>
-    </WdkAppProvider>
+    <DoctorThemeProvider>
+      <DoctorWorkletProvider>
+        <SplashHandler>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <ThemedApp />
+          </GestureHandlerRootView>
+        </SplashHandler>
+      </DoctorWorkletProvider>
+    </DoctorThemeProvider>
   );
 }
