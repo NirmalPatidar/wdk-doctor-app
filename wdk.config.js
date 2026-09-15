@@ -27,8 +27,30 @@ module.exports = {
       // Confirmed via `this.emit('update')` at index.js:182 — the only event
       // this module currently emits.
       events: ['update']
+    },
+    // A deliberately trivial synthetic module (see local-modules/wdk-module-
+    // counter) — zero external dependencies, zero real-world stakes. Exists
+    // to validate the Doctor App's own multi-module mechanics (the module
+    // picker, per-module event filtering) independent of any real package's
+    // business logic or network conditions. Mirrors addressBook's exact
+    // factory/events shape on purpose, so it exercises the same code path.
+    counter: {
+      package: 'wdk-module-counter',
+      factory: 'createWorkletModule',
+      events: ['update']
     }
   },
+  // Protocols support was attempted here (an `aave` entry pointing at
+  // @tetherto/wdk-protocol-lending-aave-evm) but reverted — it broke
+  // initializeWDK entirely (WDK_MANAGER_INIT: "No protocol manager found
+  // for protocol: undefined"), which meant wallet create/unlock failed too,
+  // not just protocol calls, since initializeWDK sends this whole config.
+  // The guessed shape (just `package`) was wrong — the bundler needs
+  // something more (likely a protocol name/type field, or something that
+  // matches wdk-core's registerProtocol(network, protocolName, ...)
+  // pattern) that hasn't been confirmed yet. Re-add only after that's
+  // actually figured out, ideally verified in isolation before it's wired
+  // into the config every wallet operation depends on.
   preloadModules: [
     '@buildonspark/spark-frost-bare-addon'
   ]

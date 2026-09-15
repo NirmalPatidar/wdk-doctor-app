@@ -2,9 +2,13 @@
 
 A debugging and dogfooding console for the Wallet Development Kit (WDK). It lets a developer plug in a new WDK package — a network, a protocol, or a module — and test it end to end (create a wallet, call its methods, suspend and resume the underlying worklet) without waiting for it to land in a production app first.
 
-**If you're here to test your own package, start with [TESTING_YOUR_PACKAGE.md](./TESTING_YOUR_PACKAGE.md)** — that's the primary reason this app exists. The rest of this README is setup and a tour of the app itself.
+**New here? Start with one of these two, depending on what you're doing:**
+- **[HOW_TO_USE.md](./documentation/HOW_TO_USE.md)** — a hands-on walkthrough for running the app and using its existing screens for the first time.
+- **[ADDING_PACKAGES.md](./documentation/ADDING_PACKAGES.md)** — step-by-step, with real worked examples, for adding a new network, module, or protocol to the app.
 
-**This app does not use `@tetherto/wdk-react-native-core`.** That's a deliberate, load-bearing decision, not an oversight — see [ARCHITECTURE.md](./ARCHITECTURE.md) for the full reasoning. Every screen talks to the worklet directly via `react-native-bare-kit` and `@tetherto/pear-wrk-wdk`'s `HRPC` client, through one shared provider (`DoctorWorkletProvider`).
+**If you're here to test your own package, start with [TESTING_YOUR_PACKAGE.md](./documentation/TESTING_YOUR_PACKAGE.md)** — that's the primary reason this app exists. The rest of this README is setup and a tour of the app itself.
+
+**This app does not use `@tetherto/wdk-react-native-core`.** That's a deliberate, load-bearing decision, not an oversight — see [ARCHITECTURE.md](./documentation/ARCHITECTURE.md) for the full reasoning. Every screen talks to the worklet directly via `react-native-bare-kit` and `@tetherto/pear-wrk-wdk`'s `HRPC` client, through one shared provider (`DoctorWorkletProvider`).
 
 ## Prerequisites
 
@@ -68,15 +72,21 @@ Pick a network and account index once at the top; every method below shares them
 
 **Confidence levels differ by method, and each card's description says so.** `getBalance`/`getAddress`/`getTokenBalance`/`sign`/`verify` are solid — traced directly to the base class. `sendTransaction`/`transfer` use a generic shape that may need network-specific extras (confirmed this happens for EVM's ERC-4337 paymaster options). `signTransaction` has no confirmed field shape at all, so it takes raw JSON instead of named fields.
 
-### Use Module, Use Protocol
-**Linked from the home screen but not yet built.** Tapping either currently 404s. This is genuine, tracked scope — not a bug to report, a feature to build. They should follow `use-account.tsx`'s exact pattern once built: one card per confirmed operation, `rpc.callModule`/whatever the protocol equivalent is, network/context picked once at the top.
+### Use Module (`src/app/features/doctor/use-module.tsx`)
+Modules have no common method set the way accounts do — each package defines its own — so this screen is a module picker (reads live from `wdkConfigs.modules`) plus one free-form "Call Method" card (method name + JSON args), rather than a fixed list of confirmed cards. A live event log sits below, filtered to whichever module is selected, with a Clear button. Two modules are wired in and confirmed working: `addressBook` (`@tetherto/wdk-p2p-address-book`, real P2P storage) and `counter` (`local-modules/wdk-module-counter`, a deliberately trivial synthetic module with zero external dependencies — exists purely to validate this screen's own multi-module mechanics, not to test anything real). Switching modules resets every card's state, so a previous module's result never lingers on screen looking like the new one's.
+
+### Use Protocol (`src/app/features/doctor/use-protocol.tsx`)
+The least-tested of the three screens, and it says so directly in its own warning banner. No protocol is currently wired in — an `aave` (`@tetherto/wdk-protocol-lending-aave-evm`) entry was attempted but **reverted**: it broke `initializeWDK` entirely (wallet create/unlock failed with `WDK_MANAGER_INIT: No protocol manager found for protocol: undefined`), because `initializeWDK` sends the whole runtime config, so a malformed protocol entry breaks wallet operations too, not just protocol calls. The guessed `wdk.config.js` shape (just a `package` field) was wrong; the correct shape hasn't been confirmed yet. See `wdk.config.js`'s own comment on this before attempting to re-add it.
 
 ### Worklet POC (`src/app/features/doctor/worklet-poc.tsx`)
 The original proof-of-concept that established the whole "no rn-core" approach works — manual RPC calls, module calls against the real `@tetherto/wdk-p2p-address-book` package, and deliberate suspend/resume tests. Left in the app intentionally, not just as scaffolding history — it's a genuine regression test. If this stops working after a change, something fundamental broke.
 
+### Debug Log (`src/app/features/doctor/debug-log.tsx`)
+Every RPC call and its result or error, every raw worklet log line, every module event, and every lifecycle transition, all in one place — captured automatically by wrapping the RPC client itself, so no other screen needs to remember to log anything. Filterable by category, with Clear and Export (opens the native share sheet — Files, email, Slack, wherever). This complements native OS logging rather than replacing it: it can only ever show what travels through our own RPC channel — a package's own internal `console.log` calls (its dependencies logging, its own debug statements) go straight to the native OS system log via `liblog`, bypassing HRPC entirely. For that category of output, `adb logcat` (Android) or `log stream --level=debug --predicate "subsystem == 'bare'"` (iOS) is still the only place to look — confirmed directly from Holepunch's own official documentation, not assumed.
+
 ## Adding a new package to test
 
-See **[TESTING_YOUR_PACKAGE.md](./TESTING_YOUR_PACKAGE.md)** — the primary guide this app exists for: the two-file config workflow, what's actually provable today for each package type (networks fully supported, modules provable but without a dedicated screen yet, protocols genuinely untested), and the real bugs already caught this way.
+See **[TESTING_YOUR_PACKAGE.md](./documentation/TESTING_YOUR_PACKAGE.md)** — the primary guide this app exists for: the two-file config workflow, what's actually provable today for each package type (networks fully supported, modules provable with two real examples now, protocols genuinely untested — a real attempt broke core wallet functionality and was reverted), and the real bugs already caught this way.
 
 ## Known, tracked gaps — not silently unhandled
 

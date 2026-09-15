@@ -20,14 +20,28 @@
     "source. 'storagePath' below is CONFIRMED BROKEN — real device test threw",
     "ENOENT: no such file or directory, stat \"addressbook-storage\". A plain",
     "relative string doesn't resolve inside the Bare sandbox, and Bare's fs does",
-    "not auto-create missing directories. The real fix (see worklet-poc.tsx's",
-    "buildConfigWithRealStoragePath) computes an absolute, created-if-missing",
+    "not auto-create missing directories. The real fix (see",
+    "DoctorWorkletProvider.tsx's buildRuntimeConfig) computes an absolute,",
+    "created-if-missing",
     "path via expo-file-system's Paths.document at runtime, then overrides this",
     "static value before sending config — mirrors bare-mobile-doctor's",
     "useBareDirectory hook, the one confirmed-working precedent for this. This",
     "static value is left as a clearly-nonfunctional placeholder rather than",
     "quietly fixed, so anyone reading only this file (not the POC) isn't misled",
-    "into thinking a relative string works."
+    "into thinking a relative string works.",
+    "",
+    "protocols: an 'aave' entry (@tetherto/wdk-protocol-lending-aave-evm) was",
+    "added here and in wdk.config.js, but REVERTED after it broke",
+    "initializeWDK entirely (WDK_MANAGER_INIT: 'No protocol manager found for",
+    "protocol: undefined') — wallet create/unlock failed too, not just",
+    "protocol calls, since initializeWDK sends this whole config. The guessed",
+    "wdk.config.js shape (just a package field) was wrong. Re-add only once",
+    "the correct shape is confirmed.",
+    "",
+    "modules.counter: a deliberately trivial synthetic module (see",
+    "local-modules/wdk-module-counter) — no config needed, hence the empty",
+    "object. Exists to validate multi-module mechanics independent of any",
+    "real package."
   ],
   "networks": {
     "bitcoin": {
@@ -82,6 +96,7 @@
     "addressBook": {
       "storagePath": "./addressbook-storage",
       "namespace": "wdk-doctor-app"
-    }
+    },
+    "counter": {}
   }
 }

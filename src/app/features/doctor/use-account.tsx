@@ -77,6 +77,13 @@ export default function UseAccountScreen() {
         />
       </View>
 
+      {/* Keyed by network — forces every card below to remount (fresh
+          result/loading/error state) whenever the network changes, rather
+          than silently showing a previous network's stale result until the
+          card is tapped again. Confirmed via direct inspection that nothing
+          else resets ActionCard's own internal state on a network switch. */}
+      <View key={network}>
+
       {/* ---- Universal methods ---- */}
       {/* Confirmed directly against wdk-wallet's shared base account class —
           every network implements these by inheritance, so no per-network
@@ -212,6 +219,7 @@ export default function UseAccountScreen() {
         action={(v) => callMethod(v.methodName, v.args ? JSON.parse(v.args) : [])}
         actionLabel="Invoke"
       />
+      </View>
     </FeatureLayout>
   );
 }

@@ -1,0 +1,7 @@
+{
+  "name": "wdk-module-counter",
+  "version": "1.0.0",
+  "description": "A trivial synthetic WDK worklet module — an in-memory counter with one event. Exists purely to validate the Doctor App's multi-module mechanics (module picker, per-module event log) without depending on any real package or external service. Not a real WDK module — don't publish this or depend on it for anything beyond that.",
+  "main": "index.js",
+  "license": "Apache-2.0"
+}

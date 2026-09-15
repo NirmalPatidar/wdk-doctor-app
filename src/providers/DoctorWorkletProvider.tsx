@@ -33,10 +33,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Share } from 'react-native';
 import { Worklet } from 'react-native-bare-kit';
 import { HRPC } from '@tetherto/pear-wrk-wdk';
 import { createSecureStorage } from '@tetherto/wdk-react-native-secure-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Directory, Paths } from 'expo-file-system';
 // Path assumes this file lives at src/providers/DoctorWorkletProvider.tsx —
 // same nesting depth as src/app/_layout.tsx, which uses the same '../../'
 // prefix for this exact file. Adjust if placed elsewhere.
@@ -70,6 +72,13 @@ export interface WalletIndexEntry {
   createdAt: number;
 }
 
+export interface ModuleEvent {
+  module: string;
+  event: string;
+  payload: string | null;
+  timestamp: number;
+}
+
 interface DoctorWorkletContextValue {
   workletStatus: WorkletStatus;
   workletError: string | null;
@@ -95,6 +104,22 @@ interface DoctorWorkletContextValue {
   lockWallet: () => Promise<void>;
   deleteWallet: (walletId: string) => Promise<void>;
   refreshWallets: () => Promise<void>;
+
+  // Every moduleEvent push the worklet has sent since app launch, most
+  // recent first, capped — used by Use Module's own event log display.
+  // Also mirrored into debugLog below for the unified export.
+  moduleEvents: ModuleEvent[];
+  clearModuleEvents: () => void;
+
+  // Every RPC call/result/error, worklet log line, module event, and
+  // lifecycle transition since app launch, most recent first, capped —
+  // the single comprehensive record for exportDebugLog. moduleEvents and
+  // lifecycle above still exist separately for their own targeted UI
+  // needs (Use Module's event log, the home screen's status badge) — this
+  // is the unified superset of all of it, for debugging and export.
+  debugLog: DebugLogEntry[];
+  clearDebugLog: () => void;
+  exportDebugLog: () => Promise<void>;
 }
 
 const WALLET_INDEX_KEY = 'doctor.walletIndex';
@@ -116,6 +141,87 @@ function pushEvent(prev: LifecycleState, label: string, suspended?: boolean): Li
   };
 }
 
+// This was previously only ever applied inside worklet-poc.tsx's standalone
+// script — the actual shared provider every real screen runs on (this file)
+// was still sending doctor.runtime.json's static, confirmed-nonfunctional
+// placeholder ("./addressbook-storage") the whole time, meaning Use Module
+// (and anything else exercising the addressBook module through the real app,
+// not the POC) hit the exact same ENOENT the POC already fixed. Ported
+// directly from worklet-poc.tsx's getRealAddressBookStoragePath /
+// buildConfigWithRealStoragePath — same logic, same reasoning: a JSON file
+// can't call a native API, so the real path has to be computed here and
+// substituted in before the config is ever sent, not left as a static value.
+function getRealAddressBookStoragePath(): string {
+  const dir = new Directory(Paths.document, 'wdk-doctor-addressbook');
+  if (!dir.exists) {
+    dir.create();
+  }
+  return dir.uri.replace('file://', '');
+}
+
+function buildRuntimeConfig(): typeof wdkConfigs {
+  const modules = wdkConfigs.modules as Record<string, any> | undefined;
+  if (!modules?.addressBook) {
+    return wdkConfigs;
+  }
+  return {
+    ...wdkConfigs,
+    modules: {
+      ...modules,
+      addressBook: {
+        ...modules.addressBook,
+        storagePath: getRealAddressBookStoragePath(),
+      },
+    },
+  } as typeof wdkConfigs;
+}
+
+export interface DebugLogEntry {
+  id: string;
+  timestamp: number;
+  category: 'rpc-call' | 'rpc-result' | 'rpc-error' | 'worklet-log' | 'module-event' | 'lifecycle';
+  label: string;
+  detail?: unknown;
+}
+
+let debugLogIdCounter = 0;
+function nextDebugLogId(): string {
+  debugLogIdCounter += 1;
+  return `log-${debugLogIdCounter}`;
+}
+
+// Wraps every RPC call transparently rather than requiring each call site
+// (createWallet, use-account.tsx's callMethod, use-module.tsx's callModule,
+// anything built later) to manually report itself. "on"-prefixed methods
+// (onLog, onModuleEvent) are handler *registrations*, not calls with a
+// request/response round trip — passed through unwrapped rather than logged
+// the same way, since logging "onLog was registered" once at boot isn't
+// useful the way logging an actual RPC call and its result is.
+function wrapRpcWithLogging(
+  rawRpc: InstanceType<typeof HRPC>,
+  onEntry: (entry: Omit<DebugLogEntry, 'id'>) => void
+): InstanceType<typeof HRPC> {
+  return new Proxy(rawRpc, {
+    get(target, prop, receiver) {
+      const orig = Reflect.get(target, prop, receiver);
+      if (typeof orig !== 'function' || typeof prop !== 'string' || prop.startsWith('on')) {
+        return typeof orig === 'function' ? orig.bind(target) : orig;
+      }
+      return async (...args: any[]) => {
+        onEntry({ timestamp: Date.now(), category: 'rpc-call', label: prop, detail: args[0] });
+        try {
+          const result = await orig.apply(target, args);
+          onEntry({ timestamp: Date.now(), category: 'rpc-result', label: prop, detail: result });
+          return result;
+        } catch (err: any) {
+          onEntry({ timestamp: Date.now(), category: 'rpc-error', label: prop, detail: err?.message ?? String(err) });
+          throw err;
+        }
+      };
+    },
+  });
+}
+
 export function DoctorWorkletProvider({ children }: { children: React.ReactNode }) {
   const [workletStatus, setWorkletStatus] = useState<WorkletStatus>('initializing');
   const [workletError, setWorkletError] = useState<string | null>(null);
@@ -129,6 +235,12 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
 
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null);
   const [wallets, setWallets] = useState<WalletIndexEntry[]>([]);
+  const [moduleEvents, setModuleEvents] = useState<ModuleEvent[]>([]);
+  const [debugLog, setDebugLog] = useState<DebugLogEntry[]>([]);
+
+  const addDebugLogEntry = useCallback((entry: Omit<DebugLogEntry, 'id'>) => {
+    setDebugLog((prev) => [{ ...entry, id: nextDebugLogId() }, ...prev].slice(0, 500));
+  }, []);
 
   // createSecureStorage() should be called once and reused, per the
   // package's own docs — useRef's initializer only runs on first render.
@@ -147,25 +259,44 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
 
         w.on('suspend', (linger: number) => {
           setLifecycle((prev) => pushEvent(prev, `suspend(linger=${linger})`, true));
+          addDebugLogEntry({ category: 'lifecycle', label: 'suspend', detail: { linger } });
         });
         w.on('resume', () => {
           setLifecycle((prev) => pushEvent(prev, 'resume', false));
+          addDebugLogEntry({ category: 'lifecycle', label: 'resume' });
         });
         w.on('wakeup', (deadline: number) => {
           setLifecycle((prev) => pushEvent(prev, `wakeup(deadline=${deadline})`));
+          addDebugLogEntry({ category: 'lifecycle', label: 'wakeup', detail: { deadline } });
         });
         w.on('idle', () => {
           setLifecycle((prev) => pushEvent(prev, 'idle'));
+          addDebugLogEntry({ category: 'lifecycle', label: 'idle' });
         });
 
-        const r = new HRPC(w.IPC);
+        const rawR = new HRPC(w.IPC);
+        // Every real RPC call (workletStart, generateEntropyAndEncrypt,
+        // callMethod, callModule, everything) is captured transparently
+        // through this wrapper — no call site anywhere else needed to
+        // change for this to work.
+        const r = wrapRpcWithLogging(rawR, addDebugLogEntry);
         // Registered before any outgoing call — a suspended-call crash
         // during POC testing confirmed this is required, not optional, if
         // the worklet can push a message before we've asked for anything.
-        r.onLog(async () => {});
-        r.onModuleEvent(async () => {});
+        r.onLog(async (entry: unknown) => {
+          addDebugLogEntry({ category: 'worklet-log', label: 'log', detail: entry });
+        });
+        // Confirmed request shape from the wire schema: { module, event,
+        // payload? }. Actually captured now, not discarded — a module's
+        // event behavior is often exactly what needs testing.
+        r.onModuleEvent(async (evt: { module: string; event: string; payload?: string | null }) => {
+          setModuleEvents((prev) =>
+            [{ module: evt.module, event: evt.event, payload: evt.payload ?? null, timestamp: Date.now() }, ...prev].slice(0, 100)
+          );
+          addDebugLogEntry({ category: 'module-event', label: `${evt.module}:${evt.event}`, detail: evt.payload ?? null });
+        });
 
-        await r.workletStart({ config: JSON.stringify(wdkConfigs) });
+        await r.workletStart({ config: JSON.stringify(buildRuntimeConfig()) });
 
         if (cancelled) return;
         setWorklet(w);
@@ -244,7 +375,7 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
       await rpc.initializeWDK({
         encryptionKey: entropy.encryptionKey,
         encryptedSeed: entropy.encryptedSeedBuffer,
-        config: JSON.stringify(wdkConfigs),
+        config: JSON.stringify(buildRuntimeConfig()),
       });
 
       const entry: WalletIndexEntry = { id: walletId, createdAt: Date.now() };
@@ -280,7 +411,7 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
       await rpc.initializeWDK({
         encryptionKey: seedResult.encryptionKey,
         encryptedSeed: seedResult.encryptedSeedBuffer,
-        config: JSON.stringify(wdkConfigs),
+        config: JSON.stringify(buildRuntimeConfig()),
       });
 
       const entry: WalletIndexEntry = { id: walletId, createdAt: Date.now() };
@@ -302,7 +433,7 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     await rpc.initializeWDK({
       encryptionKey: entropy.encryptionKey,
       encryptedSeed: entropy.encryptedSeedBuffer,
-      config: JSON.stringify(wdkConfigs),
+      config: JSON.stringify(buildRuntimeConfig()),
     });
     // No wallet id to track in the index — temporary wallets deliberately
     // don't appear in the home screen's wallet list. activeWalletId stays
@@ -357,7 +488,7 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
       await rpc.initializeWDK({
         encryptionKey,
         encryptedSeed,
-        config: JSON.stringify(wdkConfigs),
+        config: JSON.stringify(buildRuntimeConfig()),
       });
 
       setActiveWalletId(walletId);
@@ -372,7 +503,7 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     // Asks the worklet to actually forget the active wallet's in-memory
     // state, not just clear our own UI's activeWalletId.
     if (rpc) {
-      await rpc.resetWdkWallets({ config: JSON.stringify(wdkConfigs) });
+      await rpc.resetWdkWallets({ config: JSON.stringify(buildRuntimeConfig()) });
     }
     setActiveWalletId(null);
   }, [rpc]);
@@ -385,7 +516,7 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     // doesn't set one), so there's nothing UI-side to clear beyond asking
     // the worklet to forget it.
     if (rpc) {
-      await rpc.resetWdkWallets({ config: JSON.stringify(wdkConfigs) });
+      await rpc.resetWdkWallets({ config: JSON.stringify(buildRuntimeConfig()) });
     }
   }, [rpc]);
 
@@ -400,6 +531,35 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     },
     [wallets, saveWalletIndex, activeWalletId]
   );
+
+  const clearModuleEvents = useCallback(() => {
+    setModuleEvents([]);
+  }, []);
+
+  const clearDebugLog = useCallback(() => {
+    setDebugLog([]);
+  }, []);
+
+  const exportDebugLog = useCallback(async () => {
+    // Oldest-first for export — easier to read as a narrative than the
+    // newest-first order the UI displays for quick scanning.
+    const chronological = [...debugLog].reverse();
+    const lines = chronological.map((entry) => {
+      const time = new Date(entry.timestamp).toISOString();
+      const detail = entry.detail !== undefined
+        ? (typeof entry.detail === 'string' ? entry.detail : JSON.stringify(entry.detail))
+        : '';
+      return `[${time}] [${entry.category}] ${entry.label}${detail ? `: ${detail}` : ''}`;
+    });
+    const header = `WDK Doctor App — debug log export\nGenerated: ${new Date().toISOString()}\nEntries: ${chronological.length}\n${'='.repeat(40)}\n`;
+    try {
+      await Share.share({ message: header + lines.join('\n') });
+    } catch (err: any) {
+      // Share being dismissed/cancelled by the user isn't a real failure —
+      // let it fail silently rather than surface a confusing error for
+      // someone just closing the share sheet.
+    }
+  }, [debugLog]);
 
   const value: DoctorWorkletContextValue = {
     workletStatus,
@@ -420,6 +580,11 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     lockWallet,
     deleteWallet,
     refreshWallets,
+    moduleEvents,
+    clearModuleEvents,
+    debugLog,
+    clearDebugLog,
+    exportDebugLog,
   };
 
   return (
