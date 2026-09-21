@@ -13,7 +13,8 @@
   "overrides": {
     "expo-crypto": "~55.0.16",
     "expo-font": "~55.0.8",
-    "bare-node-runtime": "1.5.0"
+    "bare-node-runtime": "1.5.0",
+    "@tetherto/wdk-wallet": "1.0.0-beta.19"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",

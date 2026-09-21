@@ -8,8 +8,9 @@
  * anywhere in this file or anything built on top of it.
  *
  * Every RPC call shape here (workletStart, generateEntropyAndEncrypt,
- * initializeWDK) is copied from worklet-poc.tsx, where each was confirmed
- * against real device runs — not re-derived from the schema alone.
+ * initializeWDK) was originally confirmed against real device runs during
+ * this app's early POC work, before the standalone architecture existed —
+ * not re-derived from the schema alone.
  *
  * Wallet persistence: encryptionKey / encryptedSeed / encryptedEntropy are
  * stored via @tetherto/wdk-react-native-secure-storage, keyed per-wallet by
@@ -47,9 +48,9 @@ import wdkConfigs from '@/config/doctorRuntime';
 
 // react-native-bare-kit's shipped type declarations don't include `started`
 // and `suspended` on the Worklet class, even though both exist as real
-// getters at runtime — confirmed directly against its index.js in
-// worklet-poc.tsx. Augmenting locally rather than casting `as any` at every
-// access site.
+// getters at runtime — confirmed directly against its index.js during
+// early POC testing. Augmenting locally rather than casting `as any` at
+// every access site.
 type WorkletWithStateGetters = InstanceType<typeof Worklet> & {
   readonly started: boolean;
   readonly suspended: boolean;
@@ -141,16 +142,16 @@ function pushEvent(prev: LifecycleState, label: string, suspended?: boolean): Li
   };
 }
 
-// This was previously only ever applied inside worklet-poc.tsx's standalone
-// script — the actual shared provider every real screen runs on (this file)
-// was still sending doctor.runtime.json's static, confirmed-nonfunctional
-// placeholder ("./addressbook-storage") the whole time, meaning Use Module
-// (and anything else exercising the addressBook module through the real app,
-// not the POC) hit the exact same ENOENT the POC already fixed. Ported
-// directly from worklet-poc.tsx's getRealAddressBookStoragePath /
-// buildConfigWithRealStoragePath — same logic, same reasoning: a JSON file
-// can't call a native API, so the real path has to be computed here and
-// substituted in before the config is ever sent, not left as a static value.
+// The real, computed storage path fix below was only ever applied inside
+// this app's early standalone POC script — the actual shared provider
+// every real screen runs on (this file) was still sending
+// doctor.runtime.json's static, confirmed-nonfunctional placeholder
+// ("./addressbook-storage") the whole time, meaning Use Module (and
+// anything else exercising the addressBook module through the real app,
+// not the POC) hit the exact same ENOENT the POC had already fixed
+// elsewhere. Ported the same logic here: a JSON file can't call a native
+// API, so the real path has to be computed here and substituted in before
+// the config is ever sent, not left as a static value.
 function getRealAddressBookStoragePath(): string {
   const dir = new Directory(Paths.document, 'wdk-doctor-addressbook');
   if (!dir.exists) {
@@ -197,6 +198,54 @@ function nextDebugLogId(): string {
 // request/response round trip — passed through unwrapped rather than logged
 // the same way, since logging "onLog was registered" once at boot isn't
 // useful the way logging an actual RPC call and its result is.
+// Debug Log renders whatever's captured here via JSON.stringify. A raw
+// Uint8Array — or the {"0": N, "1": N, ...} plain-object shape a buffer
+// arrives as over the RN bridge — dumps every individual byte as its own
+// line: real data, but unreadable for a human scanning the log (a single
+// 32-byte key becomes 32 lines). This summarizes any byte-array-shaped
+// value into one scannable line (byte count + a base64 preview) purely
+// for what gets displayed — it only transforms the copy passed to
+// onEntry below; the actual args/result used in the real RPC call are
+// completely untouched.
+function isByteArrayObject(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  if (keys.length === 0) return false;
+  return (
+    keys.every((k, i) => k === String(i)) &&
+    Object.values(value).every((v) => typeof v === 'number' && v >= 0 && v <= 255 && Number.isInteger(v))
+  );
+}
+
+function bytesToLogSummary(bytes: number[]): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const base64 = btoa(binary);
+  const preview = base64.length > 28 ? `${base64.slice(0, 28)}…` : base64;
+  return `<${bytes.length} bytes, base64: ${preview}>`;
+}
+
+function summarizeForLog(value: unknown, depth = 0): unknown {
+  if (depth > 8) return value; // guard against pathological nesting
+  if (value instanceof Uint8Array) {
+    return bytesToLogSummary(Array.from(value));
+  }
+  if (isByteArrayObject(value)) {
+    return bytesToLogSummary(Object.values(value));
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => summarizeForLog(v, depth + 1));
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = summarizeForLog(v, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
 function wrapRpcWithLogging(
   rawRpc: InstanceType<typeof HRPC>,
   onEntry: (entry: Omit<DebugLogEntry, 'id'>) => void
@@ -208,13 +257,25 @@ function wrapRpcWithLogging(
         return typeof orig === 'function' ? orig.bind(target) : orig;
       }
       return async (...args: any[]) => {
-        onEntry({ timestamp: Date.now(), category: 'rpc-call', label: prop, detail: args[0] });
+        onEntry({ timestamp: Date.now(), category: 'rpc-call', label: prop, detail: summarizeForLog(args[0]) });
         try {
           const result = await orig.apply(target, args);
-          onEntry({ timestamp: Date.now(), category: 'rpc-result', label: prop, detail: result });
+          onEntry({ timestamp: Date.now(), category: 'rpc-result', label: prop, detail: summarizeForLog(result) });
           return result;
         } catch (err: any) {
-          onEntry({ timestamp: Date.now(), category: 'rpc-error', label: prop, detail: err?.message ?? String(err) });
+          // Captures the stack trace, not just the message — needed to tell
+          // which package's code actually threw a low-level error (a
+          // TypedArray/buffer mismatch, say) versus guessing from
+          // dependency version numbers alone.
+          onEntry({
+            timestamp: Date.now(),
+            category: 'rpc-error',
+            label: prop,
+            detail: {
+              message: err?.message ?? String(err),
+              stack: err?.stack ?? null,
+            },
+          });
           throw err;
         }
       };
@@ -349,6 +410,56 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     worklet?.resume();
   }, [worklet]);
 
+  // @tetherto/pear-wrk-wdk changed generateEntropyAndEncrypt's (and
+  // getSeedAndEntropyFromMnemonic's) return shape between versions —
+  // beta.10 and earlier returned encryptionKey/encryptedSeedBuffer/
+  // encryptedEntropyBuffer as base64 strings (confirmed directly from that
+  // version's own docstring: "All three returned values are strings").
+  // beta.15 returns raw buffers for HRPC callers specifically (confirmed
+  // from beta.15's own docstring: "HRPC hands them back live with no
+  // interception point in this repo") — a real, undocumented-as-breaking
+  // change between beta releases, not a bug in this app. Over the RN
+  // bridge, a raw buffer arrives here as a plain object with numeric
+  // string keys ({"0": 166, "1": 219, ...}), not an actual Uint8Array/
+  // Buffer instance.
+  //
+  // Two different shapes are needed downstream, confirmed by reading
+  // beta.15's actual wire schema (generated/hrpc/messages.js) directly:
+  // - Secure storage's setters require a plain string (toBase64).
+  // - Every RPC call that takes encryptionKey/encryptedSeed/
+  //   encryptedEntropy as a PARAMETER (initializeWDK, getMnemonicFromEntropy)
+  //   encodes it with compact-encoding's c.buffer — confirmed from
+  //   messages.js's own preencode/encode calls for these exact fields —
+  //   which requires a real Uint8Array, not a string. Passing a base64
+  //   string there causes a RangeError from TypedArray.set deep inside
+  //   the encoder (confirmed from a real stack trace), because c.buffer
+  //   treats the string's character count as a byte count and then tries
+  //   to .set() a string into a preallocated byte buffer of that size.
+  // toUint8Array is the single source of truth for normalizing any of the
+  // three shapes (raw byte object, base64 string, or an actual
+  // Uint8Array) into real bytes; toBase64 is defined in terms of it, so
+  // both conversions agree no matter which shape arrives.
+  const toUint8Array = (value: unknown): Uint8Array => {
+    if (value instanceof Uint8Array) return value;
+    if (typeof value === 'string') {
+      const binary = atob(value);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+    if (value && typeof value === 'object') {
+      return new Uint8Array(Object.values(value as Record<string, number>));
+    }
+    throw new Error(`Cannot convert value of type ${typeof value} to Uint8Array`);
+  };
+
+  const toBase64 = (value: unknown): string => {
+    const bytes = toUint8Array(value);
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  };
+
   const createWallet = useCallback(
     async (walletId: string, wordCount: 12 | 24 = 12): Promise<string> => {
       if (!rpc) throw new Error('Worklet is not ready yet');
@@ -362,19 +473,18 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
         throw new Error(`A wallet with id "${walletId}" already exists`);
       }
 
-      // Field names confirmed from worklet-poc.tsx's Section A — despite
-      // the "Buffer" suffix, these arrive as strings over the wire (the
-      // schema encodes them with c.string), passed straight through with
-      // no conversion.
       const entropy = await rpc.generateEntropyAndEncrypt({ wordCount });
+      const encryptionKey = toBase64(entropy.encryptionKey);
+      const encryptedSeed = toBase64(entropy.encryptedSeedBuffer);
+      const encryptedEntropy = toBase64(entropy.encryptedEntropyBuffer);
 
-      await secureStorageRef.current.setEncryptionKey(entropy.encryptionKey, walletId);
-      await secureStorageRef.current.setEncryptedSeed(entropy.encryptedSeedBuffer, walletId);
-      await secureStorageRef.current.setEncryptedEntropy(entropy.encryptedEntropyBuffer, walletId);
+      await secureStorageRef.current.setEncryptionKey(encryptionKey, walletId);
+      await secureStorageRef.current.setEncryptedSeed(encryptedSeed, walletId);
+      await secureStorageRef.current.setEncryptedEntropy(encryptedEntropy, walletId);
 
       await rpc.initializeWDK({
-        encryptionKey: entropy.encryptionKey,
-        encryptedSeed: entropy.encryptedSeedBuffer,
+        encryptionKey: toUint8Array(entropy.encryptionKey),
+        encryptedSeed: toUint8Array(entropy.encryptedSeedBuffer),
         config: JSON.stringify(buildRuntimeConfig()),
       });
 
@@ -392,7 +502,9 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
   // {encryptedEntropy, encryptionKey}) -> {mnemonic}) were re-verified
   // directly against the wire schema (@tetherto/pear-wrk-wdk's generated
   // messages.js) after initially only being cross-referenced from
-  // wdk-core-kotlin's docs — confirmed exact, no changes needed.
+  // wdk-core-kotlin's docs — confirmed exact, no changes needed. The
+  // string-vs-buffer encoding of the three secret fields is the separate
+  // concern toBase64 above handles.
 
   const importWallet = useCallback(
     async (mnemonic: string, walletId: string): Promise<string> => {
@@ -403,14 +515,17 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
       }
 
       const seedResult = await rpc.getSeedAndEntropyFromMnemonic({ mnemonic });
+      const encryptionKey = toBase64(seedResult.encryptionKey);
+      const encryptedSeed = toBase64(seedResult.encryptedSeedBuffer);
+      const encryptedEntropy = toBase64(seedResult.encryptedEntropyBuffer);
 
-      await secureStorageRef.current.setEncryptionKey(seedResult.encryptionKey, walletId);
-      await secureStorageRef.current.setEncryptedSeed(seedResult.encryptedSeedBuffer, walletId);
-      await secureStorageRef.current.setEncryptedEntropy(seedResult.encryptedEntropyBuffer, walletId);
+      await secureStorageRef.current.setEncryptionKey(encryptionKey, walletId);
+      await secureStorageRef.current.setEncryptedSeed(encryptedSeed, walletId);
+      await secureStorageRef.current.setEncryptedEntropy(encryptedEntropy, walletId);
 
       await rpc.initializeWDK({
-        encryptionKey: seedResult.encryptionKey,
-        encryptedSeed: seedResult.encryptedSeedBuffer,
+        encryptionKey: toUint8Array(seedResult.encryptionKey),
+        encryptedSeed: toUint8Array(seedResult.encryptedSeedBuffer),
         config: JSON.stringify(buildRuntimeConfig()),
       });
 
@@ -431,8 +546,8 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
     // createTemporaryWallet semantics.
     const entropy = await rpc.generateEntropyAndEncrypt({ wordCount: 12 });
     await rpc.initializeWDK({
-      encryptionKey: entropy.encryptionKey,
-      encryptedSeed: entropy.encryptedSeedBuffer,
+      encryptionKey: toUint8Array(entropy.encryptionKey),
+      encryptedSeed: toUint8Array(entropy.encryptedSeedBuffer),
       config: JSON.stringify(buildRuntimeConfig()),
     });
     // No wallet id to track in the index — temporary wallets deliberately
@@ -449,8 +564,8 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
       // committing to create a wallet from it.
       const entropy = await rpc.generateEntropyAndEncrypt({ wordCount });
       const result = await rpc.getMnemonicFromEntropy({
-        encryptedEntropy: entropy.encryptedEntropyBuffer,
-        encryptionKey: entropy.encryptionKey,
+        encryptedEntropy: toUint8Array(entropy.encryptedEntropyBuffer),
+        encryptionKey: toUint8Array(entropy.encryptionKey),
       });
       return result.mnemonic;
     },
@@ -468,7 +583,13 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
         throw new Error(`No stored credentials found for wallet ${walletId}`);
       }
 
-      const result = await rpc.getMnemonicFromEntropy({ encryptedEntropy, encryptionKey });
+      // Secure storage returns the base64 strings we wrote — same
+      // c.buffer wire requirement as everywhere else, so convert back to
+      // real bytes before this RPC call, not just on the write path.
+      const result = await rpc.getMnemonicFromEntropy({
+        encryptedEntropy: toUint8Array(encryptedEntropy),
+        encryptionKey: toUint8Array(encryptionKey),
+      });
       return result.mnemonic;
     },
     [rpc]
@@ -486,8 +607,8 @@ export function DoctorWorkletProvider({ children }: { children: React.ReactNode 
       }
 
       await rpc.initializeWDK({
-        encryptionKey,
-        encryptedSeed,
+        encryptionKey: toUint8Array(encryptionKey),
+        encryptedSeed: toUint8Array(encryptedSeed),
         config: JSON.stringify(buildRuntimeConfig()),
       });
 

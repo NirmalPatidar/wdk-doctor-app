@@ -144,44 +144,67 @@ This one exists purely to prove the *app's own* multi-module handling works, ind
 
 ## Adding a Protocol
 
-Protocols are the newest, least-proven part of this app — worth knowing that going in, and worth an even more cautious approach than networks or modules for one specific reason explained below.
+Protocols follow the same two-file pattern as networks and modules — but nearly every real protocol package needs one additional fix to actually work, worth understanding before you add your own.
 
-### What actually happened when this was tried: a real, instructive failure
+### Worked example: `aave` — confirmed working end to end
 
-An `aave` entry (`@tetherto/wdk-protocol-lending-aave-evm`) was added to both `wdk.config.js` and `doctor.runtime.json`, following the same shape as `networks` — just a `package` field:
+**1. Real npm dependency:**
+```json
+"@tetherto/wdk-protocol-lending-aave-evm": "^1.0.0-beta.7"
+```
 
+**2. `wdk.config.js`:**
 ```js
-// wdk.config.js — this shape was wrong, kept here as a documented example
-// of what NOT to assume
 protocols: {
   aave: {
     package: '@tetherto/wdk-protocol-lending-aave-evm'
   }
 }
 ```
+This shape — just a `package` field, keyed by the label you'll use everywhere else — is confirmed correct, verified directly against the bundler's own JSON schema and code generator. It builds a `protocolManagers['aave'] = <the Aave class>` mapping inside the compiled worklet bundle.
 
-This broke wallet creation and unlock entirely — both failed with:
-
+**3. `doctor.runtime.json`:**
+```json
+"protocols": {
+  "aave": {
+    "protocolName": "aave",
+    "blockchain": "ethereum",
+    "config": {}
+  }
+}
 ```
-{"code":"WDK_MANAGER_INIT","message":"No protocol manager found for protocol: undefined","error":"..."}
+`protocolName` must match the key used in `wdk.config.js`. `blockchain` must be an already-registered network. Both confirmed directly by reading `@tetherto/pear-wrk-wdk`'s actual `initializeWDK` handler source.
+
+**4. Calling it** needs a specific `options` shape on the `callMethod` request, also confirmed from source (`execution.js`'s `callMethodHandler`):
+```json
+{ "methodName": "getAccountData", "options": { "protocolType": "lending", "protocolName": "aave" } }
 ```
+`protocolType` is one of a fixed set — `swap`/`bridge`/`lending`/`fiat`/`swidge` — confirmed as the complete set from the handler's own source. The handler swaps the plain account for `account.getLendingProtocol("aave")` (or the equivalent accessor for your protocol's type) before calling your method on it.
 
-**Why this is a bigger deal than a typo in a config field.** `initializeWDK` — the call underneath both creating and unlocking any wallet — sends the app's *entire* runtime config, not just the parts relevant to what you're doing. A malformed protocol entry doesn't fail quietly when you go test that protocol specifically; it breaks every wallet operation in the app, immediately, for everyone. This is the single most important thing to know before adding a protocol here: **test a new protocol entry in genuine isolation before trusting it** — don't assume "I'll just try it and see" carries the same low blast radius it does for, say, a new module.
+### The one thing nearly every protocol package needs beyond this
 
-The entry was reverted rather than debugged further in place. The correct shape is still unknown — it likely needs something closer to `wdk-core`'s own `registerProtocol(network, protocolName, ProtocolClass, config)` pattern (a protocol *name*, not just a package), but that hasn't been confirmed against this app's actual bundler.
+**Config alone usually isn't enough to get a working call — one dependency fix is needed too.** Every real protocol package checked (Aave, Velora, USDT0 bridge, MoonPay) exact-pins an outdated `@tetherto/wdk-wallet` version in its own `package.json`. This silently breaks protocol registration the moment this app's dependency tree has already converged on a newer shared version — `initializeWDK` succeeds with no error, but the protocol was never actually attached, so calling it later fails with `"No <type> protocol registered for label: <name>"`. This is **not** a config mistake — the config above is genuinely correct and sufficient on its own for a package that doesn't have this dependency issue.
 
-### Steps to add your own protocol — more cautiously than the above
+**Full explanation of why this happens, and the confirmed fix (a `package.json` `overrides` entry), is in [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).** Read it before assuming your own protocol's config is wrong.
+
+### A real, instructive failure worth knowing about — and the lesson it taught
+
+An earlier attempt at wiring in a protocol used an incomplete `doctor.runtime.json` entry (just `{package: ...}`-style fields, missing `protocolName`/`blockchain`/`config`). This broke wallet creation and unlock entirely, not just protocol calls, with `WDK_MANAGER_INIT: No protocol manager found for protocol: undefined`. The reason: `initializeWDK` — the call underneath both creating and unlocking any wallet — sends the app's *entire* runtime config, not just the parts relevant to what you're doing. A malformed protocol entry doesn't fail quietly when you go test that protocol specifically; it breaks every wallet operation in the app, immediately, for everyone.
+
+**The lesson that came out of this, and still applies**: test a new protocol entry in genuine isolation before trusting it. Specifically — after adding or changing any protocol config, confirm wallet create/unlock still work *before* testing the protocol itself. This is the single check that would have caught the above immediately instead of after further, more confusing testing.
+
+### Steps to add your own protocol
 
 1. `npm install <your-protocol-package>`
-2. **Before touching `wdk.config.js`**, check the `@tetherto/wdk-worklet-bundler` package's own source (or ask in the WDK Discord/GitHub issues — see the links in `documentation/TESTING_YOUR_PACKAGE.md`) for the actual expected shape of a `protocols` entry. Don't repeat the mistake above of guessing from `networks`' shape.
-3. Add it to `wdk.config.js`'s `protocols` section with the *confirmed* shape.
-4. Add its runtime config to `doctor.runtime.json`'s `protocols` section.
-5. `npx wdk-worklet-bundler generate`, reload.
-6. **Before testing the protocol itself, first confirm wallet create/unlock still works.** This is the specific check the Aave attempt skipped, and it's the one that would have caught the problem immediately instead of after further testing. If wallet operations break, the protocol entry is almost certainly why — revert it before debugging further.
-7. Once wallet operations are confirmed unaffected, test the protocol's safest read-only method first (check its own docs for one), the same way `getBalance`/`getAddress` are the safe starting point for a new network.
+2. Add it to `wdk.config.js`'s `protocols` section: `yourProtocol: { package: '<your-protocol-package>' }`.
+3. Add its runtime config to `doctor.runtime.json`'s `protocols` section, with all three fields: `protocolName` (matching the `wdk.config.js` key), `blockchain` (an already-registered network), and `config` (whatever your protocol package's own docs say it needs, or `{}` if nothing).
+4. `npx wdk-worklet-bundler generate`, reload.
+5. **Before testing the protocol itself, first confirm wallet create/unlock still work.** If they break, a missing `protocolName`/`blockchain` field is the first thing to check.
+6. Test the protocol's safest read-only method first, using `options: {protocolType: '<type>', protocolName: '<your key>'}` alongside `methodName`.
+7. **If you get `"No <type> protocol registered for label: <name>"` despite correct config**, this is almost certainly the dependency issue described above, not your config — check [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) before debugging further.
 
 ---
 
 ## If something doesn't work
 
-Check `documentation/TESTING_YOUR_PACKAGE.md`'s "What this has already caught" section first — several real, non-obvious bugs (bad storage paths, malformed provider URLs, missing enrollment steps, double-JSON-encoded results) have already been found and fixed once; there's a good chance a new failure matches one of them rather than being something genuinely new.
+Check [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) first — two specific, non-obvious failure modes (a silent protocol registration bug, and a wire-format change between `pear-wrk-wdk` versions) are documented there in enough detail to recognize immediately rather than re-debug from scratch. Then check `documentation/TESTING_YOUR_PACKAGE.md`'s "Real bugs this app has already caught" section — several other real, non-obvious bugs (bad storage paths, malformed provider URLs) have already been found and fixed once; there's a good chance a new failure matches one of them rather than being something genuinely new.

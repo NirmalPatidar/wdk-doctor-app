@@ -21,7 +21,7 @@ Where a check has a known risk or a specific expected value, it's noted — don'
 - [ ] Restart the app after toggling — the theme choice persisted
 - [ ] In **Manage Worklet Lifecycle**: leave the linger field blank, tap **Suspend** — status flips to Suspended
 - [ ] Tap **Resume** — status flips back to Active
-- [ ] Type a linger value (e.g. `5000`), tap **Suspend**, then immediately try a call on Use Account (e.g. `getBalance`) — the call should still complete (linger is a grace period, not an instant block) — confirms this specific, non-obvious behavior actually works as documented
+- [ ] **In-flight calls survive linger; new calls during linger don't.** On Use Account, tap **Get Balance**, and *before it resolves* switch to Home and tap **Suspend** with a linger value (e.g. `5000`) already entered — the in-flight call should still complete successfully. Then, still within the linger window, go back to Use Account and tap **Get Balance** again — this new call should time out/fail, the same as if fully suspended. Linger only protects existing work; it doesn't hold the door open for new requests.
 - [ ] After linger elapses without tapping Resume, status should show Suspended and stay that way — it does *not* automatically flip back to Active on its own
 
 ## 2. Wallet Management
@@ -74,31 +74,36 @@ General:
 
 ## 5. Use Protocol
 
-- [ ] No protocol is currently configured — an `aave` attempt broke wallet create/unlock and was reverted (see `wdk.config.js`'s comment). Confirm the screen still loads cleanly with an empty protocol list, and its warning banner is visible and legible in both themes
-- [ ] **Do not** re-attempt wiring in a protocol without first confirming the correct config shape (see `documentation/ADDING_PACKAGES.md`'s "Adding a Protocol" section) — and when you do, re-run section 2 (wallet create/unlock) immediately after, before testing the protocol itself, since that's the check that would have caught the original failure right away
+- [ ] `aave` appears as the configured protocol
+- [ ] Select **Ethereum** — confirm the "Get Account Data (Aave)" card is visible; select any other network — confirm it's replaced by an explanatory message instead
+- [ ] Tap **Get Account Data (Aave)** — returns real data (`totalCollateralBase`, `totalDebtBase`, `healthFactor`, etc.), likely all zeros/max-health-factor for a fresh wallet, but a real response, not an error. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) if this fails with `"No lending protocol registered for label: aave"` — that's a known, understood dependency issue with a confirmed fix, not a new bug
+- [ ] Via the **Call Protocol Method** card, manually enter `methodName: getAccountData` and `options: {"protocolType": "lending", "protocolName": "aave"}` — should return the same result as the dedicated card above, confirming the general-purpose path works the same way
+- [ ] Confirm sections 1–2 (wallet create/unlock) still pass after any change to protocol config — this is the specific check that catches the "malformed protocol entry breaks wallet operations" failure mode immediately, rather than after further, more confusing testing
 
-## 6. Worklet POC (regression check)
-
-- [ ] Run the full POC sequence top to bottom — every step (A0 through C16) completes as previously documented, with no new failures
-- [ ] This is the one screen where "still works exactly as before" *is* the success criterion — if anything here changed behavior, something fundamental broke
-
-## 7. Debug Log
+## 6. Debug Log
 
 - [ ] After working through sections 2–5 above, open Debug Log — confirm entries exist for RPC calls, results, module events, and lifecycle transitions
 - [ ] Filter by each category pill — confirm the count and content actually change, not just the label
+- [ ] Trigger a real error (e.g. an invalid method name) and confirm the `RPC Error` entry includes a `stack` field, not just a `message` — this is what makes a failure traceable to its actual cause rather than just its symptom
 - [ ] Tap **Export** — the native share sheet opens with real, readable content (not empty, not just a header)
 - [ ] Tap **Clear** — the list empties; confirm new actions still populate it afterward (clearing doesn't break capture)
 
-## 8. Theme, across every screen
+## 7. Theme, across every screen
 
-- [ ] Toggle to light theme, then visit every screen (Home, Wallet Management, Use Account, Use Module, Use Protocol, Worklet POC, Debug Log) — confirm none of them render dark cards on a light background (or vice versa)
+- [ ] Toggle to light theme, then visit every screen (Home, Wallet Management, Use Account, Use Module, Use Protocol, Debug Log) — confirm none of them render dark cards on a light background (or vice versa)
 - [ ] On any orange/primary button, confirm the text is legible: white text in light theme, black text in dark theme
 - [ ] On any non-primary (card/outline) button, confirm its text/icon reads in the orange primary color, not the default text color
 
-## 9. `rn-core` removal — a final, direct verification
+## 8. `rn-core` removal — a final, direct verification
 
 - [ ] `grep -rn "wdk-react-native-core" src/ package.json` — confirm zero real hits (comments describing its *absence* are fine; any actual import is not)
 - [ ] Confirm `@tetherto/wdk-react-native-core` is not in `package.json`'s dependencies
+
+## 9. Dependency hygiene, if `package.json` changed since the last full pass
+
+- [ ] `npm ls @tetherto/wdk-wallet` (or whichever package was touched) shows no `invalid` markers
+- [ ] `git diff package-lock.json --stat` shows a diff proportionate to the actual change made — a small deliberate change producing a huge, unexplained diff is worth stopping on before proceeding further
+- [ ] Sections 0–2 above (build, launch, wallet create/unlock) re-pass specifically — dependency changes have previously broken wallet operations in ways unrelated to whatever the change was actually for
 
 ---
 

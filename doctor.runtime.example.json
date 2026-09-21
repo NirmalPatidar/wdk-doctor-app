@@ -91,7 +91,13 @@
       }
     }
   },
-  "protocols": {},
+  "protocols": {
+    "aave": {
+      "protocolName": "aave",
+      "blockchain": "ethereum",
+      "config": {}
+    }
+  },
   "modules": {
     "addressBook": {
       "storagePath": "./addressbook-storage",

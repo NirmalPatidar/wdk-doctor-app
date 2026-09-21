@@ -271,7 +271,6 @@ export default function App() {
             <FeatureItem title="Use Account" route="/features/doctor/use-account" />
             <FeatureItem title="Use Module" route="/features/doctor/use-module" />
             <FeatureItem title="Use Protocol" route="/features/doctor/use-protocol" />
-            <FeatureItem title="Worklet POC (no rn-core)" route="/features/doctor/worklet-poc" />
             <FeatureItem title="Debug Log" route="/features/doctor/debug-log" />
           </FeatureGroup>
         </View>

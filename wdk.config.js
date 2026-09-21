@@ -40,17 +40,37 @@ module.exports = {
       events: ['update']
     }
   },
-  // Protocols support was attempted here (an `aave` entry pointing at
-  // @tetherto/wdk-protocol-lending-aave-evm) but reverted — it broke
-  // initializeWDK entirely (WDK_MANAGER_INIT: "No protocol manager found
-  // for protocol: undefined"), which meant wallet create/unlock failed too,
-  // not just protocol calls, since initializeWDK sends this whole config.
-  // The guessed shape (just `package`) was wrong — the bundler needs
-  // something more (likely a protocol name/type field, or something that
-  // matches wdk-core's registerProtocol(network, protocolName, ...)
-  // pattern) that hasn't been confirmed yet. Re-add only after that's
-  // actually figured out, ideally verified in isolation before it's wired
-  // into the config every wallet operation depends on.
+  // This shape (`package` only, keyed by the name used as the protocol's
+  // registration label) is confirmed correct at the wdk.config.js/bundler
+  // level — verified against the bundler's own JSON schema
+  // (loader-*.js) and its code generator (bundler-*.js's
+  // generateProtocolModulesCode), which builds `protocolManagers['aave'] =
+  // <the Aave class>` from exactly this. The `aave` key here IS the label
+  // that doctor.runtime.json's protocols.aave.protocolName must match
+  // (doctor.runtime.json already has this correctly — it was never the
+  // problem).
+  //
+  // KNOWN, SEPARATE, UNRESOLVED ISSUE: even with this correctly added,
+  // Aave's actual protocol registration fails *silently* at runtime
+  // (initializeWDK succeeds, but a later "No lending protocol registered
+  // for label: aave" error occurs when calling it) — traced to
+  // @tetherto/wdk-protocol-lending-aave-evm having its own nested,
+  // different-version copy of @tetherto/wdk-wallet than the rest of the
+  // tree, which breaks an internal instanceof type check with no thrown
+  // error. This is a bug in that package's own dependency declaration
+  // (it exact-pins an outdated version), not something fixable safely
+  // from this app's side — every dependency-override attempt tried has
+  // caused a worse regression than the original bug. Report upstream;
+  // don't attempt another local fix without a very good reason.
+  //
+  // This entry (protocols section only, zero dependency changes) is
+  // deliberately just the safe half of this work — it fixes wallet
+  // create/unlock previously breaking, not Aave's own registration bug.
+  protocols: {
+    aave: {
+      package: '@tetherto/wdk-protocol-lending-aave-evm'
+    }
+  },
   preloadModules: [
     '@buildonspark/spark-frost-bare-addon'
   ]

@@ -8,6 +8,8 @@ A debugging and dogfooding console for the Wallet Development Kit (WDK). It lets
 
 **If you're here to test your own package, start with [TESTING_YOUR_PACKAGE.md](./documentation/TESTING_YOUR_PACKAGE.md)** — that's the primary reason this app exists. The rest of this README is setup and a tour of the app itself.
 
+**Hit a confusing error?** Check **[TROUBLESHOOTING.md](./documentation/TROUBLESHOOTING.md)** before assuming it's new — two specific, previously-encountered issues (a silent protocol registration failure, and a wire-format change between `@tetherto/pear-wrk-wdk` versions) both look like completely different, unrelated problems on the surface, and both cost real debugging time before their actual causes were pinned down.
+
 **This app does not use `@tetherto/wdk-react-native-core`.** That's a deliberate, load-bearing decision, not an oversight — see [ARCHITECTURE.md](./documentation/ARCHITECTURE.md) for the full reasoning. Every screen talks to the worklet directly via `react-native-bare-kit` and `@tetherto/pear-wrk-wdk`'s `HRPC` client, through one shared provider (`DoctorWorkletProvider`).
 
 ## Prerequisites
@@ -21,8 +23,9 @@ A debugging and dogfooding console for the Wallet Development Kit (WDK). It lets
 1. **Create your local config files:**
    ```sh
    cp doctor.runtime.example.json doctor.runtime.json   # if not already present
+   cp .env.example .env                                  # if not already present
    ```
-   Also create a `.env` file — as of this writing, no `.env.example` exists in the repo despite being referenced by the setup script and error messages below. Required variables (confirmed from `doctorRuntime.ts`'s fail-fast validation and `doctor.runtime.example.json`'s `$VAR` references):
+   Fill in `.env` with real values. Required variables (confirmed from `doctorRuntime.ts`'s fail-fast validation and `doctor.runtime.example.json`'s `$VAR` references):
    ```
    EXPO_PUBLIC_BTC_PROVIDER=https://tbtc1.trezor.io/api
    EXPO_PUBLIC_EVM_PROVIDER=<your Sepolia RPC URL>
@@ -33,13 +36,17 @@ A debugging and dogfooding console for the Wallet Development Kit (WDK). It lets
    EXPO_PUBLIC_TRON_GASFREE_API_KEY=<from gasfree.io dev portal>
    EXPO_PUBLIC_TRON_GASFREE_API_SECRET=<from gasfree.io dev portal>
    ```
-   **Note: Spark has no corresponding variable.** It's configured directly in `doctor.runtime.json` as `"network": "MAINNET"` — not a placeholder, not testnet. See the "Spark is on Mainnet" section below before touching it.
+   **Get your own `EXPO_PUBLIC_EVM_PROVIDER` key — don't use Alchemy's shared `/v2/demo` endpoint.** It's a public, heavily-rate-limited placeholder; real testing on this app hit its 429 retry limit directly. A free Alchemy account (Sepolia app) takes a couple of minutes.
+
+   **Note: Spark has no corresponding variable.** It's configured directly in `doctor.runtime.json` as `"network": "MAINNET"` — not a placeholder, not testnet. See "Known, tracked gaps" below before touching it.
 
 2. **Install:**
    ```sh
    npm install
    ```
    This runs `scripts/ensure-doctor-runtime-config.js` (copies `doctor.runtime.example.json` → `doctor.runtime.json` if missing) and `wdk-worklet-bundler generate` (builds the worklet bundle from `wdk.config.js`).
+
+   **If `npm install` fails with `ENOSPC` or leaves `node_modules` in a broken, half-extracted state** (symptoms: `npm error Invalid Version:` on every subsequent install, a dependency the bundler expects showing as "NOT INSTALLED" when you know it's in `package.json`), this is disk space, not a code problem — check `df -h /` before anything else, then `rm -rf node_modules package-lock.json && npm cache clean --force && npm install`. A partial extraction from a disk-full install can corrupt npm's local cache too, so a plain reinstall alone may not be enough.
 
 3. **Run:**
    ```sh
@@ -55,13 +62,16 @@ A debugging and dogfooding console for the Wallet Development Kit (WDK). It lets
 | `preloadModules` in `wdk.config.js` (native addons) | Full native rebuild: `rm -rf android ios`, then `npm run android`/`ios` |
 | Any JS/TS in `src/` | Just reload |
 | A new native JS dependency (e.g. `async-storage`) was added but never natively rebuilt since | Full native rebuild — a JS-only reload will *not* pick up new native modules, and will fail with errors like "Native module is null" |
+| `package.json`'s `dependencies` or `overrides` | `rm -rf node_modules package-lock.json && npm install`, then `wdk-worklet-bundler generate`, then a full native rebuild — a dependency change can shift what's actually inside the worklet bundle, not just JS you'd reload |
+
+**After any dependency change, before rebuilding anything on a device:** run `npm ls <the package you touched>` and check for `invalid` markers, and `git diff package-lock.json --stat` to see how much actually moved. A large, unexpected diff after a small, deliberate change is a real warning sign — this app's history includes more than one case where a targeted dependency fix quietly reshuffled something unrelated, which only surfaced as a native crash or a broken wallet operation once actually tested on a device. See [TROUBLESHOOTING.md](./documentation/TROUBLESHOOTING.md) for two specific examples.
 
 ## Tour of the app
 
 ### Home screen (`src/app/index.tsx`)
 Three things at a glance:
 - **Worklet Ready** / **Wallet Ready** / **Active-or-Suspended** status badges. These are three genuinely separate things — "Worklet Ready" only means the worklet process started; it says nothing about whether a wallet has been initialized inside it. If you call a method and get `WDK_MANAGER_INIT: WDK not initialized`, this is almost always why — check "Wallet Ready" specifically.
-- **Manage Worklet Lifecycle** — a linger (ms) field plus Suspend/Resume buttons, operating on the one real worklet the whole app shares. Linger is a grace period *before* suspension takes effect, not a duration *of* suspension — once truly suspended, only Resume brings it back; it never resumes on its own. A theme toggle (light/dark) sits in the header.
+- **Manage Worklet Lifecycle** — a linger (ms) field plus Suspend/Resume buttons, operating on the one real worklet the whole app shares. Linger protects work already in flight when Suspend is tapped, for that duration — it does not hold the door open for *new* calls started after that point, and it is not how long the worklet stays suspended. Once truly suspended, only Resume brings it back; it never resumes on its own. A theme toggle (light/dark) sits in the header.
 - **Wallets** — every wallet you've created or imported, with inline Unlock/Lock. A "Manage" link goes to the full Wallet Management screen for create/import/delete/reveal.
 
 ### Wallet Management (`src/app/features/wallet/manage-account.tsx`)
@@ -76,22 +86,24 @@ Pick a network and account index once at the top; every method below shares them
 Modules have no common method set the way accounts do — each package defines its own — so this screen is a module picker (reads live from `wdkConfigs.modules`) plus one free-form "Call Method" card (method name + JSON args), rather than a fixed list of confirmed cards. A live event log sits below, filtered to whichever module is selected, with a Clear button. Two modules are wired in and confirmed working: `addressBook` (`@tetherto/wdk-p2p-address-book`, real P2P storage) and `counter` (`local-modules/wdk-module-counter`, a deliberately trivial synthetic module with zero external dependencies — exists purely to validate this screen's own multi-module mechanics, not to test anything real). Switching modules resets every card's state, so a previous module's result never lingers on screen looking like the new one's.
 
 ### Use Protocol (`src/app/features/doctor/use-protocol.tsx`)
-The least-tested of the three screens, and it says so directly in its own warning banner. No protocol is currently wired in — an `aave` (`@tetherto/wdk-protocol-lending-aave-evm`) entry was attempted but **reverted**: it broke `initializeWDK` entirely (wallet create/unlock failed with `WDK_MANAGER_INIT: No protocol manager found for protocol: undefined`), because `initializeWDK` sends the whole runtime config, so a malformed protocol entry breaks wallet operations too, not just protocol calls. The guessed `wdk.config.js` shape (just a `package` field) was wrong; the correct shape hasn't been confirmed yet. See `wdk.config.js`'s own comment on this before attempting to re-add it.
+**Confirmed working end to end** — real data back from Aave's contract on Sepolia. `@tetherto/wdk-protocol-lending-aave-evm` is wired in; `getAccountData` is the one call confirmed safe (a pure read, no gas, no funds needed). The `Call Protocol Method` card handles anything else, on any configured protocol, via `options: {protocolType, protocolName}`.
 
-### Worklet POC (`src/app/features/doctor/worklet-poc.tsx`)
-The original proof-of-concept that established the whole "no rn-core" approach works — manual RPC calls, module calls against the real `@tetherto/wdk-p2p-address-book` package, and deliberate suspend/resume tests. Left in the app intentionally, not just as scaffolding history — it's a genuine regression test. If this stops working after a change, something fundamental broke.
+Getting this working needed one fix outside this app's own config: **every `wdk-protocol-*` package pins an outdated `@tetherto/wdk-wallet` version**, which silently breaks protocol registration the moment the app's dependency tree has already converged on a newer shared version — confirmed across all four real protocol packages checked (Aave, Velora, USDT0 bridge, MoonPay), so this isn't Aave-specific. Fixed here via a `package.json` `overrides` entry. Full explanation, the exact mechanism, and the fix: **[TROUBLESHOOTING.md](./documentation/TROUBLESHOOTING.md)**.
+
+If you wire up a *different* protocol and hit `"No <type> protocol registered for label: <name>"`, the screen's own error handling will tell you this directly — it's a generic check, not specific to Aave.
 
 ### Debug Log (`src/app/features/doctor/debug-log.tsx`)
-Every RPC call and its result or error, every raw worklet log line, every module event, and every lifecycle transition, all in one place — captured automatically by wrapping the RPC client itself, so no other screen needs to remember to log anything. Filterable by category, with Clear and Export (opens the native share sheet — Files, email, Slack, wherever). This complements native OS logging rather than replacing it: it can only ever show what travels through our own RPC channel — a package's own internal `console.log` calls (its dependencies logging, its own debug statements) go straight to the native OS system log via `liblog`, bypassing HRPC entirely. For that category of output, `adb logcat` (Android) or `log stream --level=debug --predicate "subsystem == 'bare'"` (iOS) is still the only place to look — confirmed directly from Holepunch's own official documentation, not assumed.
+Every RPC call and its result or error, every raw worklet log line, every module event, and every lifecycle transition, all in one place — captured automatically by wrapping the RPC client itself, so no other screen needs to remember to log anything. Error entries include the full stack trace, not just the message — added specifically because a message alone ("value must be a string") wasn't enough to trace a real bug back to its actual cause; see [TROUBLESHOOTING.md](./documentation/TROUBLESHOOTING.md). Filterable by category, with Clear and Export (opens the native share sheet — Files, email, Slack, wherever). This complements native OS logging rather than replacing it: it can only ever show what travels through our own RPC channel — a package's own internal `console.log` calls (its dependencies logging, its own debug statements) go straight to the native OS system log via `liblog`, bypassing HRPC entirely. For that category of output, `adb logcat` (Android) or `log stream --level=debug --predicate "subsystem == 'bare'"` (iOS) is still the only place to look — confirmed directly from Holepunch's own official documentation, not assumed.
 
 ## Adding a new package to test
 
-See **[TESTING_YOUR_PACKAGE.md](./documentation/TESTING_YOUR_PACKAGE.md)** — the primary guide this app exists for: the two-file config workflow, what's actually provable today for each package type (networks fully supported, modules provable with two real examples now, protocols genuinely untested — a real attempt broke core wallet functionality and was reverted), and the real bugs already caught this way.
+See **[TESTING_YOUR_PACKAGE.md](./documentation/TESTING_YOUR_PACKAGE.md)** — the primary guide this app exists for: the two-file config workflow, what's actually provable today for each package type (networks and modules fully supported; protocols confirmed working, with one important caveat about a dependency version fix most protocol packages currently need — see above), and the real bugs already caught this way.
 
 ## Known, tracked gaps — not silently unhandled
 
 - **Spark is on Mainnet, not testnet.** Spark's testnet auth service was confirmed unreachable during testing (`UNAVAILABLE: connection refused`), independently reproduced, ruled out as a local config/device issue. Real value is at risk if this wallet is funded casually. See `doctor.runtime.example.json`'s `_readme` field for the full writeup and the open question (testnet outage vs. Spark's own docs suggesting `REGTEST` is the actually-intended path).
-- **`.env.example` doesn't exist.** Referenced by the setup script and error messages; needs creating from the variable list above before this is committed, or the next person hits exactly the confusing "why does this error mention a file I don't have" experience this app is otherwise careful to avoid.
+- **Every `wdk-protocol-*` package needs a dependency fix to register correctly** — see [TROUBLESHOOTING.md](./documentation/TROUBLESHOOTING.md). Worked around locally via `package.json` `overrides`; reported upstream as the real fix.
+- **`@tetherto/pear-wrk-wdk`'s wire format for `generateEntropyAndEncrypt`/`getSeedAndEntropyFromMnemonic` has changed between beta versions without a major version bump** — see [TROUBLESHOOTING.md](./documentation/TROUBLESHOOTING.md). Handled defensively in `DoctorWorkletProvider.tsx` (`toUint8Array`/`toBase64` normalize either shape), but worth knowing this ecosystem's "beta" versions can carry real breaking changes.
 - **`lockWallet`/`clearTemporaryWallet` call `resetWdkWallets`**, confirmed against the real current wire schema — but "confirmed" here means the request/response shape matches, not that every downstream effect has been exhaustively tested.
 - **`wdk-uikit-react-native`'s `ThemeProvider`** is passed the current theme via its `defaultMode` prop. The name suggests it may only be read once at mount, not reactively — untested assumption, flagged directly in `_layout.tsx`'s code comments.
 

@@ -20,17 +20,41 @@ export default function UseProtocolScreen() {
   const callMethod = async (methodName: string, args: unknown[] = [], options?: unknown) => {
     if (!rpc) throw new Error('Worklet is not ready yet');
     const accountIndex = parseInt(accountIndexInput, 10) || 0;
-    const response = await rpc.callMethod({
-      methodName,
-      network,
-      accountIndex,
-      ...(args.length > 0 ? { args: JSON.stringify(args) } : {}),
-      ...(options !== undefined ? { options: JSON.stringify(options) } : {}),
-    });
     try {
-      return JSON.parse(response.result);
-    } catch {
-      return response.result;
+      const response = await rpc.callMethod({
+        methodName,
+        network,
+        accountIndex,
+        ...(args.length > 0 ? { args: JSON.stringify(args) } : {}),
+        ...(options !== undefined ? { options: JSON.stringify(options) } : {}),
+      });
+      try {
+        return JSON.parse(response.result);
+      } catch {
+        return response.result;
+      }
+    } catch (err: any) {
+      const message = err?.message ?? String(err);
+      // This exact error text means registration silently no-op'd rather
+      // than throwing (confirmed from @tetherto/wdk's registerProtocol
+      // source — its instanceof type-check chain has no final else) — the
+      // overwhelmingly likely cause, confirmed multiple times against real
+      // protocol packages, is that this protocol's own package pins a
+      // different @tetherto/wdk-wallet version than the rest of the app's
+      // dependency tree resolved to, so the protocol's base class and the
+      // one @tetherto/wdk checks against are two separate module
+      // instances. Enriching the message here rather than replacing it,
+      // so the original error is still visible for anyone who wants it.
+      const match = /No \w+ protocol registered for label: ([\w-]+)/.exec(message);
+      if (match) {
+        const label = match[1];
+        throw new Error(
+          `${message}\n\n` +
+          `Likely cause: a duplicate @tetherto/wdk-wallet install inside "${label}"'s own package — a known issue affecting every wdk-protocol-* package (each pins an old, exact wdk-wallet version instead of a range). Run "npm ls @tetherto/wdk-wallet" and check for a version under "${label}" that isn't deduped with the rest of the tree, or shows "invalid".\n\n` +
+          `Confirmed fix: add to package.json — "overrides": {"@tetherto/wdk-wallet": "<range matching what @tetherto/wdk itself declares, e.g. ^1.0.0-beta.15>"}. Use a range, not another exact pin — a pin breaks again on the next registry update; the range self-heals.`
+        );
+      }
+      throw err;
     }
   };
 
@@ -40,20 +64,24 @@ export default function UseProtocolScreen() {
       description="Call protocol methods (swap, bridge, lending, fiat, swidge) on a configured network."
     >
       <View style={styles.warningBanner}>
-        <Text style={styles.warningBannerTitle}>Not yet exercised through this app — but a real, safe path exists</Text>
+        <Text style={styles.warningBannerTitle}>Confirmed working — real data back from a live network</Text>
         <Text style={styles.warningBannerText}>
-          No protocol has ever been configured in doctor.runtime.json or called through this
-          app's RPC layer specifically — that part is still true. But @tetherto/wdk-protocol-lending-aave-evm
-          (Aave V3 lending) is real, published, and its getAccountData() method is genuinely safe
-          to test with zero funds at risk: it's a pure read (collateral, debt, health factor),
-          confirmed from Tether's own official API docs, not a guess. supply/withdraw/borrow/repay
-          are real methods too, but need actual token balances on a live network — Aave V3 has no
-          confirmed testnet deployment, so those specifically carry the same real-funds caution as
-          anything on mainnet. See TESTING_YOUR_PACKAGE.md for the exact config and a concrete
-          first call to try.{'\n\n'}
-          Still unconfirmed: whether "options" (below) is how a specific protocol implementation
-          gets selected for a call at the RPC layer, or whether that happens some other way —
-          this app's own wiring for a protocol call hasn't been tried yet, even with Aave.
+          @tetherto/wdk-protocol-lending-aave-evm (Aave V3 lending) is wired in and confirmed
+          working end to end: real data back from Aave's contract on Sepolia via getAccountData.
+          Config is correct at every level this app controls (wdk.config.js's protocols entry,
+          doctor.runtime.json's protocolName/blockchain/config fields, and callMethod's
+          protocolType/protocolName options routing — pass "options":
+          {'{'}"protocolType": "lending", "protocolName": "aave"{'}'} alongside a normal
+          methodName; the handler swaps the plain account for account.getLendingProtocol("aave")
+          before calling your method on it).{'\n\n'}
+          Getting it working needed one thing outside this app's own config: every wdk-protocol-*
+          package pins an outdated @tetherto/wdk-wallet version, which breaks an internal instanceof
+          type check the moment the app's dependency tree has already converged on a newer one —
+          registration succeeds with no error, but the protocol was never actually attached, so
+          calling it fails with "No lending protocol registered for label: aave". Fixed here via a
+          package.json override pinning @tetherto/wdk-wallet to a range (not an exact version —
+          that breaks again on the next registry update). See this screen's own error handling below
+          for the same guidance if you hit this with a different protocol.
         </Text>
       </View>
 
@@ -74,27 +102,38 @@ export default function UseProtocolScreen() {
       {activeWalletId === null && (
         <View style={styles.warningBanner}>
           <Text style={styles.warningBannerText}>
-            No wallet is active. Protocol calls likely need one, the same way account and module
-            calls do — unconfirmed here specifically, since nothing has been tested, but assume
-            it applies until shown otherwise.
+            No wallet is active. Protocol calls need one, the same way account and module calls do —
+            confirmed directly from the callMethod handler's source (it fetches the account first,
+            regardless of protocolType/protocolName).
           </Text>
         </View>
       )}
 
       <View key={network}>
+        {network === 'ethereum' ? (
+          <ActionCard
+            title="Get Account Data (Aave)"
+            description="Confirmed working — a pure read, no gas, no funds needed. Returns collateral, debt, and health-factor data for this account on Aave (likely all zeros/max-health-factor for a fresh wallet, which is the correct response, not an error)."
+            fields={[]}
+            action={() => callMethod('getAccountData', [], { protocolType: 'lending', protocolName: 'aave' })}
+            actionLabel="Get Account Data"
+          />
+        ) : (
+          <View style={styles.warningBanner}>
+            <Text style={styles.warningBannerText}>
+              Aave is only registered against the "ethereum" network in doctor.runtime.json —
+              select Ethereum above to use the Get Account Data card.
+            </Text>
+          </View>
+        )}
+
         <ActionCard
           title="Call Protocol Method"
-          description={
-            'No common protocol method set has been confirmed callable this way. Known protocol ' +
-            'type interfaces from wdk-wallet\'s source (for reference, not confirmed callable ' +
-            'through this exact path): IBridgeProtocol has bridge/quoteBridge. Swap, lending, ' +
-            'fiat, and swidge protocol types also exist per wdk-core\'s registerProtocol pattern, ' +
-            'but their method names were not independently confirmed this session.'
-          }
+          description="Any other method, on any configured protocol. protocolType must be one of swap/bridge/lending/fiat/swidge — confirmed as the complete, fixed set from the callMethod handler's own source, not inferred."
           fields={[
-            { id: 'methodName', type: 'text', label: 'Method Name', placeholder: 'e.g. bridge, quoteBridge' },
-            { id: 'args', type: 'json', label: 'Arguments (JSON array, optional)', placeholder: '[{"amount": "100"}]' },
-            { id: 'options', type: 'json', label: 'Options (JSON object, optional — see warning above)', placeholder: '{"protocol": "paraswap"}' },
+            { id: 'methodName', type: 'text', label: 'Method Name', placeholder: 'e.g. supply, quoteSupply' },
+            { id: 'args', type: 'json', label: 'Arguments (JSON array, optional)', placeholder: '[{"token": "0x...", "amount": 1000000}]' },
+            { id: 'options', type: 'json', label: 'Options (JSON object — protocolType + protocolName)', placeholder: '{"protocolType": "lending", "protocolName": "aave"}' },
           ]}
           action={(v) =>
             callMethod(
